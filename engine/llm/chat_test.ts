@@ -19,7 +19,16 @@ Deno.test("unit: chat engine constructs with aliases", () => {
 
 Deno.test("unit: chat without init() throws", async () => {
   const engine = new ChatEngine("lfm2.5-350m");
-  await assertRejects(() => engine.chat("hello"), Error, "init()");
+  await assertRejects(
+    () => engine.chat([{ role: "user", content: "hello" }]),
+    Error,
+    "init()",
+  );
+});
+
+Deno.test("unit: generate without init() throws", async () => {
+  const engine = new ChatEngine("lfm2.5-350m");
+  await assertRejects(() => engine.generate("hello"), Error, "init()");
 });
 
 Deno.test("unit: chat returns final reply without duplicating stream chunks", async () => {
@@ -35,7 +44,41 @@ Deno.test("unit: chat returns final reply without duplicating stream chunks", as
     }
   }
   const engine = new FakeStreamingEngine("lfm2.5-350m");
-  assertEquals(await engine.chat("hi"), "Hello world!");
+  assertEquals(
+    await engine.chat([{ role: "user", content: "hi" }]),
+    "Hello world!",
+  );
+});
+
+Deno.test("unit: generate wraps prompt as single user message", async () => {
+  class FakeChatEngine extends ChatEngine {
+    lastHistory?: ChatMessage[];
+    override chat(history: ChatMessage[]): Promise<string> {
+      this.lastHistory = history;
+      return Promise.resolve("fake-reply");
+    }
+  }
+  const engine = new FakeChatEngine("lfm2.5-350m");
+  assertEquals(await engine.generate("hello"), "fake-reply");
+  assertEquals(engine.lastHistory, [{ role: "user", content: "hello" }]);
+});
+
+Deno.test("unit: generateStream delegates to chatStream", async () => {
+  class FakeStreamEngine extends ChatEngine {
+    override async *chatStream(
+      _history: ChatMessage[],
+    ): AsyncGenerator<string, void, unknown> {
+      yield "a";
+      yield "ab";
+    }
+  }
+  const chunks: string[] = [];
+  for await (
+    const c of new FakeStreamEngine("lfm2.5-350m").generateStream("hi")
+  ) {
+    chunks.push(c);
+  }
+  assertEquals(chunks, ["a", "ab"]);
 });
 
 Deno.test("unit: chatStream without init() throws", async () => {

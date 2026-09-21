@@ -26,12 +26,14 @@ import { ChatEngine } from "@ricardo/jax-llm";
 
 ## Quick Start
 
+Single prompt:
+
 ```typescript
 import { ChatEngine } from "@ricardo/jax-llm";
 
 const engine = new ChatEngine("lfm2.5-350m");
 await engine.init();
-const response = await engine.chat("Hello, how are you?");
+const response = await engine.generate("Hello, how are you?");
 console.log(response);
 engine.dispose();
 ```
@@ -47,23 +49,21 @@ const engine = new ChatEngine("gemma", {
 await engine.init();
 ```
 
-Streaming responses (`chatStream` yields cumulative text, so diff against the
-previous chunk for the delta):
+Streaming a single prompt (`generateStream` yields cumulative text, so diff
+against the previous chunk for the delta):
 
 ```typescript
-for await (
-  const chunk of engine.chatStream([
-    { role: "user", content: "Tell me a story" },
-  ])
-) {
+for await (const chunk of engine.generateStream("Tell me a story")) {
   console.log(chunk);
 }
 ```
 
-Multi-turn conversation:
+Streaming a conversation works the same way with `chatStream(history)`.
+
+Multi-turn conversation (`chat` takes the full turn history):
 
 ```typescript
-const reply = await engine.chatStream([
+const reply = await engine.chat([
   { role: "system", content: "You are a concise assistant." },
   { role: "user", content: "What is JAX?" },
   { role: "assistant", content: "JAX is a numerical computing library." },
@@ -103,15 +103,15 @@ All public symbols are exported from the package root (`mod.ts` →
 
 **Chat layer** (`engine/chat/`) — what most consumers need:
 
-| Symbol                                                                                                             | Kind      | Description                                                                                                                   |
-| ------------------------------------------------------------------------------------------------------------------ | --------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `ChatEngine`                                                                                                       | class     | `new ChatEngine(model, options?)` → `init()` → `chat()` / `chatStream()`; plus `getSystemInfo()`, `getRuntime()`, `dispose()` |
-| `ChatMessage`                                                                                                      | type      | `{ role: "system" \| "user" \| "assistant", content: string }`                                                                |
-| `ChatEngineOptions`                                                                                                | type      | `{ backend?, maxTokens?, sampling?, weightOverrides?, tokenizerOverrides? }`                                                  |
-| `SystemInfo`                                                                                                       | type      | Runtime status from `getSystemInfo()`                                                                                         |
-| `sampleLogits`                                                                                                     | function  | Temperature / top-K / top-p / repetition-penalty sampling                                                                     |
-| `SamplingOptions` / `SamplingDefaults`                                                                             | types     | Sampling parameters; `resolveSamplingDefaults()` merges overrides                                                             |
-| `gemmaPrompt`, `lfmPrompt`, `qwenPrompt`, `bonsaiPrompt`, `gptPrompt`, `phiPrompt`, `maplePrompt`, `genericPrompt` | functions | Per-family prompt formatters                                                                                                  |
+| Symbol                                                                                                             | Kind      | Description                                                                                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------------------ | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ChatEngine`                                                                                                       | class     | `new ChatEngine(model, options?)` → `init()` → `chat()` / `chatStream()` for conversations, `generate()` / `generateStream()` for single prompts; plus `getSystemInfo()`, `getRuntime()`, `dispose()` |
+| `ChatMessage`                                                                                                      | type      | `{ role: "system" \| "user" \| "assistant", content: string }`                                                                                                                                        |
+| `ChatEngineOptions`                                                                                                | type      | `{ backend?, maxTokens?, sampling?, weightOverrides?, tokenizerOverrides? }`                                                                                                                          |
+| `SystemInfo`                                                                                                       | type      | Runtime status from `getSystemInfo()`                                                                                                                                                                 |
+| `sampleLogits`                                                                                                     | function  | Temperature / top-K / top-p / repetition-penalty sampling                                                                                                                                             |
+| `SamplingOptions` / `SamplingDefaults`                                                                             | types     | Sampling parameters; `resolveSamplingDefaults()` merges overrides                                                                                                                                     |
+| `gemmaPrompt`, `lfmPrompt`, `qwenPrompt`, `bonsaiPrompt`, `gptPrompt`, `phiPrompt`, `maplePrompt`, `genericPrompt` | functions | Per-family prompt formatters                                                                                                                                                                          |
 
 **Runtime layer** (`engine/runtime/`) — advanced use:
 
@@ -143,7 +143,8 @@ Two-layer abstraction:
   JIT-compiled inference sessions, memory management, safetensors parsing (with
   BF16 support), and optax-based training.
 - **Chat layer** (`engine/chat/`): `ChatEngine` facade plus sampling and prompt
-  formatting. Pass a model name and call `engine.chat(input)`.
+  formatting. Pass a model name, then `chat(history)` for conversations or
+  `generate(prompt)` for single prompts.
 
 Model implementations live in `engine/llm/` (registry in `model.ts`, passes in
 `gemma.ts` / `lfm.ts`, loaders in `llm/loaders/`, KV-cache state in

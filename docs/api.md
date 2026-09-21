@@ -6,8 +6,10 @@ is the source of truth.
 
 ## Chat (`engine/chat/`)
 
-- `ChatEngine` — `new ChatEngine(model, options?)`; `init()`, `chat()`,
-  `chatStream()`, `getSystemInfo()`, `getRuntime()`, `dispose()`.
+- `ChatEngine` — `new ChatEngine(model, options?)`; `init()`, `chat(history)` /
+  `chatStream(history)` for conversations, `generate(prompt)` /
+  `generateStream(prompt)` for single prompts, `getSystemInfo()`,
+  `getRuntime()`, `dispose()`.
 - `ChatMessage` — `{ role: "system" | "user" | "assistant"; content: string }`.
 - `ChatEngineOptions` —
   `{ backend?, maxTokens?, sampling?,

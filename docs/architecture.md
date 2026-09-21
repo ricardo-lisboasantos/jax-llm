@@ -28,9 +28,10 @@ High-level API most consumers use:
 
 - `ChatEngine` (`chat_engine.ts`): `new ChatEngine(model, options?)` builds a
   `ModelRuntime` internally. `init()` loads and resolves sampling defaults;
-  `chat(message)` is the one-shot path; `chatStream(history)` is the streaming
-  generate loop (prefill prompt → sample → check stop tokens → step → yield
-  cumulative text → dispose session). `getSystemInfo()`, `getRuntime()` (escape
+  `chat(history)` / `chatStream(history)` drive multi-turn conversations while
+  `generate(prompt)` / `generateStream(prompt)` cover single prompts. The
+  generate loop is: prefill prompt → sample → check stop tokens → step → yield
+  cumulative text → dispose session. `getSystemInfo()`, `getRuntime()` (escape
   hatch to the runtime), and `dispose()`.
 - Sampling (`sampler.ts`): `sampleLogits()` implements temperature (≤0 =
   greedy), top-K, top-p nucleus filtering, and repetition penalty;

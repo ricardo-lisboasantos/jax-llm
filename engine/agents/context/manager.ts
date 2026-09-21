@@ -6,7 +6,7 @@ import type { MemoryEntry } from "../memory.ts";
  * so a live engine can be passed directly — or a lightweight fake in tests.
  */
 export type ContextSummarizer = {
-  chat(message: string): Promise<string>;
+  generate(prompt: string): Promise<string>;
 };
 
 export type FunnelOptions = {
@@ -92,7 +92,7 @@ export class ContextManager {
     const lm = summarizer ?? this.summarizer;
     if (!lm) return this.summarizeExtractive(entries);
     try {
-      const out = (await lm.chat(this.buildSummaryPrompt(entries))).trim();
+      const out = (await lm.generate(this.buildSummaryPrompt(entries))).trim();
       return out.length > 0 ? out : this.summarizeExtractive(entries);
     } catch {
       return this.summarizeExtractive(entries);

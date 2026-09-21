@@ -1,6 +1,6 @@
 {
   "name": "@ricardo/jax-llm",
-  "version": "0.2.5",
+  "version": "0.3.0",
   "description": "A JAX-based LLM engine for JavaScript/TypeScript",
   "keywords": ["jax", "llm", "ai", "machine-learning"],
   "exports": "./mod.ts",

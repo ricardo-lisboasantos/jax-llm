@@ -5,8 +5,8 @@
 // Architecture:
 //  - **Runtime layer** (`engine/runtime/`): low-level JAX-JS model lifecycle —
 //    device init, tokenizer/weight loading, JIT inference, optax training.
-//  - **Chat layer** (`engine/chat/`): high-level `ChatEngine` — just pass a
-//    model name and call `engine.chat(input)`.
+//  - **Chat layer** (`engine/chat/`): high-level `ChatEngine` — `chat()` for
+//    conversations, `generate()` for single prompts.
 //
 // @example
 // ```ts
@@ -14,7 +14,7 @@
 //
 // const engine = new ChatEngine("lfm2.5-350m");
 // await engine.init();
-// const reply = await engine.chat("Hello!");
+// const reply = await engine.generate("Hello!");
 // ```
 
 export * from "./engine/index.ts";

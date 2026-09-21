@@ -8,7 +8,16 @@
  * ```ts
  * const engine = new ChatEngine("lfm2.5-350m");
  * await engine.init();
- * const reply = await engine.chat("Explain quantum computing.");
+ *
+ * // Single prompt
+ * const reply = await engine.generate("Explain quantum computing.");
+ *
+ * // Multi-turn conversation
+ * const chatReply = await engine.chat([
+ *   { role: "user", content: "What is JAX?" },
+ *   { role: "assistant", content: "JAX is a numerical computing library." },
+ *   { role: "user", content: "And how is it used here?" },
+ * ]);
  * ```
  *
  * It delegates all low-level concerns (device init, tokenizer/weight
@@ -76,17 +85,16 @@ export class ChatEngine {
   }
 
   /**
-   * Send a single user message and get the full response string.
+   * Send a conversation history and get the full response string.
    *
-   * This is the simplest possible interaction — no streaming, no
-   * conversation history management. For multi-turn or streaming use
-   * `chatStream()`.
+   * This is the chatbot entry point — pass the full turn history and get
+   * back the complete assistant reply (no streaming). For a single prompt
+   * use `generate()`; for streaming use `chatStream()`.
    *
-   * @param message The user's input text.
+   * @param history The conversation history (system + user + assistant turns).
    * @returns The assistant's response.
    */
-  async chat(message: string): Promise<string> {
-    const history: ChatMessage[] = [{ role: "user", content: message }];
+  async chat(history: ChatMessage[]): Promise<string> {
     let response = "";
     for await (const chunk of this.chatStream(history)) {
       // chatStream() yields cumulative text (full reply so far), so each
@@ -94,6 +102,34 @@ export class ChatEngine {
       response = chunk;
     }
     return response;
+  }
+
+  /**
+   * Generate a completion for a single prompt and get the full response.
+   *
+   * Convenience wrapper around `chat()` for single-shot generation without
+   * conversation history.
+   *
+   * @param prompt The user's input text.
+   * @returns The assistant's response.
+   */
+  generate(prompt: string): Promise<string> {
+    return this.chat([{ role: "user", content: prompt }]);
+  }
+
+  /**
+   * Stream a completion for a single prompt as an async generator.
+   *
+   * Convenience wrapper around `chatStream()` — each yield is the cumulative
+   * generated text so far.
+   *
+   * @param prompt The user's input text.
+   * @yields Cumulative generated text strings.
+   */
+  async *generateStream(
+    prompt: string,
+  ): AsyncGenerator<string, void, unknown> {
+    yield* this.chatStream([{ role: "user", content: prompt }]);
   }
 
   /**

@@ -42,7 +42,7 @@ Deno.test("unit: ContextManager windows + renders", () => {
 Deno.test("unit: ContextManager funnel summarizes older, keeps recent", async () => {
   const calls: string[] = [];
   const fakeLm = {
-    chat: (prompt: string) => {
+    generate: (prompt: string) => {
       calls.push(prompt);
       return Promise.resolve("User wants X; decided Y.");
     },
@@ -70,7 +70,7 @@ Deno.test("unit: ContextManager funnel summarizes older, keeps recent", async ()
 
 Deno.test("unit: ContextManager funnel needs no summary within budget", async () => {
   const cm = new ContextManager(10, {
-    chat: () => Promise.reject(new Error("should not be called")),
+    generate: () => Promise.reject(new Error("should not be called")),
   });
   const entries = [{ role: "user", content: "hi", timestamp: new Date() }];
   const funneled = await cm.funnel(entries);
@@ -93,7 +93,7 @@ Deno.test("unit: ContextManager summarize falls back without LM", async () => {
 
 Deno.test("unit: ContextManager summarize falls back on LM failure", async () => {
   const cm = new ContextManager(10, {
-    chat: () => Promise.reject(new Error("offline")),
+    generate: () => Promise.reject(new Error("offline")),
   });
   const out = await cm.summarize([
     { role: "user", content: "important fact", timestamp: new Date() },

@@ -36,13 +36,13 @@ Deno.test("integration: registry resolves all built-ins offline", () => {
   }
 });
 
-Deno.test("integration: ChatEngine init + chat (needs network)", async () => {
+Deno.test("integration: ChatEngine init + generate (needs network)", async () => {
   if (!(await hasNetwork())) {
     console.log("SKIP integration: no network access");
     return;
   }
   const engine = new ChatEngine("lfm2.5-350m", { maxTokens: 16 });
   await engine.init();
-  const reply = await engine.chat("Say hi in five words or less.");
+  const reply = await engine.generate("Say hi in five words or less.");
   assert(reply.length > 0, "expected non-empty reply");
 });
