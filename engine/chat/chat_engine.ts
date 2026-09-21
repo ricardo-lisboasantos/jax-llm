@@ -89,7 +89,9 @@ export class ChatEngine {
     const history: ChatMessage[] = [{ role: "user", content: message }];
     let response = "";
     for await (const chunk of this.chatStream(history)) {
-      response += chunk;
+      // chatStream() yields cumulative text (full reply so far), so each
+      // chunk supersedes the previous one — keep only the latest.
+      response = chunk;
     }
     return response;
   }
