@@ -28,6 +28,10 @@ import type {
   TokenizerInterface,
 } from "./types.ts";
 
+/**
+ * Low-level JAX-JS model lifecycle manager: device init, tokenizer and
+ * weight loading, inference sessions, and disposal.
+ */
 export class ModelRuntime {
   /** The resolved model definition. */
   readonly definition: ModelDefinition;
@@ -37,6 +41,7 @@ export class ModelRuntime {
   private model?: LoadedModel;
   private initialized = false;
 
+  /** Create a runtime for a model ID with an optional runtime config. */
   constructor(
     modelId: string,
     config: RuntimeConfig = {

@@ -19,8 +19,10 @@ import type { ModelDefinition } from "./types.ts";
 
 // ── Optimizer factory ─────────────────────────────────────────────────────
 
+/** Supported optimizer families for {@linkcode createOptimizer}. */
 export type OptimizerType = "sgd" | "adam" | "adamw";
 
+/** Hyperparameters accepted by {@linkcode createOptimizer}. */
 export type OptimizerOptions = {
   learningRate: number;
   weightDecay?: number;
@@ -132,11 +134,13 @@ function oneHotRows(indices: np.Array, numClasses: number): np.Array {
 
 // ── Training Runner ────────────────────────────────────────────────────────
 
+/** A single training batch of token IDs and next-token targets. */
 export type TrainingBatch = {
   inputIds: np.Array; // [batch, T]
   targets: np.Array; // [batch, T]
 };
 
+/** Training loop configuration for {@linkcode TrainingRunner}. */
 export type TrainingConfig = {
   optimizer: OptimizerType;
   optimizerOptions: OptimizerOptions;
@@ -171,6 +175,7 @@ export class TrainingRunner {
   private params?: any;
   private config: TrainingConfig;
 
+  /** Create a training runner for a model definition and training config. */
   constructor(
     private definition: ModelDefinition,
     config: TrainingConfig,

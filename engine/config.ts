@@ -1,7 +1,9 @@
 import type { Backend } from "./runtime/types.ts";
 import { DEFAULT_MODEL_ID } from "./runtime/registry.ts";
 
+/** Top-level library configuration. */
 export interface Config {
+  /** Chat engine settings: backend, model selection, and URL overrides. */
   chat: {
     backend: Backend;
     modelId: string;
@@ -14,6 +16,7 @@ export interface Config {
 }
 
 // Default configuration used when no custom config is provided.
+/** Default configuration used when no custom config is provided. */
 export const DEFAULT_CONFIG: Config = {
   chat: {
     backend: "webgpu",

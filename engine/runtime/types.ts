@@ -96,6 +96,7 @@ export type RuntimeConfig = {
   tokenizerOverrides?: Record<string, string>;
 };
 
+/** Default {@linkcode RuntimeConfig} using the WebGPU backend and float32 weights. */
 export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   backend: "webgpu",
   dtype: "float32" as np.DType,

@@ -16,12 +16,21 @@ import {
 } from "./layers/lfm/lfm_attention.ts";
 import { runEmbedding } from "./layers/lfm/lfm_embedding.ts";
 
+/** LFM model weights: token embeddings, norm, and hybrid conv/attention layers. */
 export type LfmModel = {
   embedTokens: LfmLinear;
   embeddingNorm: RMSNorm;
   layers: (LfmAttentionLayer | LfmConvLayer)[];
 };
 
+/**
+ * Run an LFM prefill pass over the full prompt.
+ *
+ * @param model Model weights.
+ * @param tokenIds Prompt token IDs.
+ * @param state Mutable KV-cache state updated in place.
+ * @returns Logits for the last prompt token.
+ */
 export function runLfmPrefill(
   model: LfmModel,
   tokenIds: np.Array,
@@ -65,6 +74,14 @@ export function runLfmPrefill(
   return logits;
 }
 
+/**
+ * Run a single LFM decode step for one generated token.
+ *
+ * @param model Model weights.
+ * @param tokenId The most recently generated token ID.
+ * @param state Mutable KV-cache state updated in place.
+ * @returns Next-token logits.
+ */
 export function runLfmStep(
   model: LfmModel,
   tokenId: number,

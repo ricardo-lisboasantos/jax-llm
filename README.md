@@ -1,19 +1,30 @@
 # @ricardo/jax-llm
 
-A JAX‑based LLM engine for JavaScript/TypeScript, designed for Deno.
+A JAX-based LLM engine for JavaScript/TypeScript, designed for Deno.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Deno](https://img.shields.io/badge/deno-2.x-brightgreen.svg)](https://deno.land/)
+[![JSR](https://jsr.io/badges/@ricardo/jax-llm)](https://jsr.io/@ricardo/jax-llm)
+
+## Requirements
+
+- **Deno 2.x** with `--allow-net --allow-read --allow-write --allow-env` (plus
+  the `webgpu` and `kv` unstable flags used by `deno task test`).
+- A **WebGPU**-capable browser/runtime by default, or `"wasm"` fallback.
+- Network access on first run to download weights and tokenizer files from
+  Hugging Face.
 
 ## Installation
 
 ```bash
-# Using Deno
 deno add jsr:@ricardo/jax-llm
 ```
 
+```typescript
+import { ChatEngine } from "@ricardo/jax-llm";
+```
+
 ## Quick Start
-
-### Using the Library
-
-The simplest API — just pass a model name and call `chat()`:
 
 ```typescript
 import { ChatEngine } from "@ricardo/jax-llm";
@@ -22,6 +33,7 @@ const engine = new ChatEngine("lfm2.5-350m");
 await engine.init();
 const response = await engine.chat("Hello, how are you?");
 console.log(response);
+engine.dispose();
 ```
 
 With options:
@@ -35,7 +47,8 @@ const engine = new ChatEngine("gemma", {
 await engine.init();
 ```
 
-Streaming responses:
+Streaming responses (`chatStream` yields cumulative text, so diff against the
+previous chunk for the delta):
 
 ```typescript
 for await (
@@ -43,165 +56,188 @@ for await (
     { role: "user", content: "Tell me a story" },
   ])
 ) {
-  process.stdout.write(chunk);
+  console.log(chunk);
 }
 ```
 
-Model names can be:
+Multi-turn conversation:
 
-- **Built-in IDs**: `"lfm2.5-350m"`, `"gemma-3-270m"`
-- **Short aliases**: `"lfm"`, `"gemma"`
-- **HuggingFace repos**: `"org/model-name"` (loaded dynamically)```
-
-### Using the CLI
-
-```bash
-deno run -A cli/main.ts
+```typescript
+const reply = await engine.chatStream([
+  { role: "system", content: "You are a concise assistant." },
+  { role: "user", content: "What is JAX?" },
+  { role: "assistant", content: "JAX is a numerical computing library." },
+  { role: "user", content: "And how is it used here?" },
+]);
 ```
 
-The CLI includes an interactive chat interface with support for commands like
-`/clear`, `/model`, and `/help`.
+## Models
+
+Built-in model IDs (`CHAT_MODELS` / `MODEL_IDS`):
+
+| ID              | Label               | Context | Download       |
+| --------------- | ------------------- | ------- | -------------- |
+| `lfm2.5-350m`   | LFM2.5 350M         | 4096    | 676 MB         |
+| `gemma-3-270m`  | Gemma 3 270M        | 8192    | 536 MB         |
+| `qwen2.5-0.5b`  | Qwen2.5 0.5B        | 4096    | 1.0 GB         |
+| `bonsai`        | Bonsai (Llama)      | 2048    | 1.0 GB         |
+| `gpt2`          | GPT-2               | 1024    | 548 MB         |
+| `phi-2`         | Phi-2               | 2048    | 5.2 GB         |
+| `maple-preview` | Maple Preview (MoE) | 4096    | 20B (9 shards) |
+
+The default model is `lfm2.5-350m` (`DEFAULT_MODEL_ID` /
+`DEFAULT_CHAT_MODEL_ID`).
+
+Short aliases are also accepted: `lfm`, `lfm2`, `lfm2.5`, `gemma`, `qwen`,
+`qwen2`, `qwen2.5`, `bonsai`, `gpt`, `gpt2`, `phi`, `phi2`, `maple`.
+
+Any other `"org/model-name"` string is treated as a Hugging Face repo ID and
+resolved dynamically (`isHuggingFaceRepo`, `resolveModel`), using the LFM2.5
+checkpoint loader as a generic fallback. See [docs/models.md](docs/models.md).
+
+## API Overview
+
+All public symbols are exported from the package root (`mod.ts` →
+`engine/index.ts`) and documented with JSDoc (`deno doc --lint` reports 0
+`missing-jsdoc` errors). See [docs/api.md](docs/api.md) for the full reference.
+
+**Chat layer** (`engine/chat/`) — what most consumers need:
+
+| Symbol                                                                                                             | Kind      | Description                                                                                                                   |
+| ------------------------------------------------------------------------------------------------------------------ | --------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `ChatEngine`                                                                                                       | class     | `new ChatEngine(model, options?)` → `init()` → `chat()` / `chatStream()`; plus `getSystemInfo()`, `getRuntime()`, `dispose()` |
+| `ChatMessage`                                                                                                      | type      | `{ role: "system" \| "user" \| "assistant", content: string }`                                                                |
+| `ChatEngineOptions`                                                                                                | type      | `{ backend?, maxTokens?, sampling?, weightOverrides?, tokenizerOverrides? }`                                                  |
+| `SystemInfo`                                                                                                       | type      | Runtime status from `getSystemInfo()`                                                                                         |
+| `sampleLogits`                                                                                                     | function  | Temperature / top-K / top-p / repetition-penalty sampling                                                                     |
+| `SamplingOptions` / `SamplingDefaults`                                                                             | types     | Sampling parameters; `resolveSamplingDefaults()` merges overrides                                                             |
+| `gemmaPrompt`, `lfmPrompt`, `qwenPrompt`, `bonsaiPrompt`, `gptPrompt`, `phiPrompt`, `maplePrompt`, `genericPrompt` | functions | Per-family prompt formatters                                                                                                  |
+
+**Runtime layer** (`engine/runtime/`) — advanced use:
+
+| Symbol                                                                                                                      | Kind                | Description                                                           |
+| --------------------------------------------------------------------------------------------------------------------------- | ------------------- | --------------------------------------------------------------------- |
+| `ModelRuntime`                                                                                                              | class               | Device init, tokenizer/weight loading, `createSession()`, `dispose()` |
+| `ModelDefinition` / `LoadedModel` / `InferenceSession`                                                                      | types               | `prefill()` → `step()` → `dispose()` inference sessions               |
+| `RuntimeConfig` / `DEFAULT_RUNTIME_CONFIG`                                                                                  | types               | `{ backend, dtype, weightOverrides?, tokenizerOverrides? }`           |
+| `resolveModel`, `isBuiltInModel`, `isAlias`, `isHuggingFaceRepo`, `MODEL_IDS`, `DEFAULT_MODEL_ID`, `tokenizerUrlCandidates` | functions/constants | Model resolution                                                      |
+| `parseSafetensors`                                                                                                          | function            | Safetensors parser with BF16 → F32 support                            |
+| `TrainingRunner`, `TrainingConfig`, `TrainingBatch`                                                                         | class/types         | Optax fine-tuning loop                                                |
+| `createOptimizer`, `OptimizerType`, `OptimizerOptions`, `crossEntropyLoss`                                                  | function/types      | SGD / Adam / AdamW + causal LM loss                                   |
+
+**Models, tokenizer, database, config:**
+
+| Symbol                                                                                                              | Kind            | Description                                                                    |
+| ------------------------------------------------------------------------------------------------------------------- | --------------- | ------------------------------------------------------------------------------ |
+| `CHAT_MODELS`, `CHAT_MODEL_IDS`, `ChatModel`, `ChatModelId`, `LoadedChatModel`, `ChatModelSession`, `ChatTokenizer` | constants/types | Model registry (`engine/llm/model.ts`)                                         |
+| `GemmaModel`, `runGemmaPrefill`, `runGemmaStep`, `LfmModel`, `runLfmPrefill`, `runLfmStep`                          | types/functions | Low-level model passes                                                         |
+| `HuggingFaceBpeTokenizer`                                                                                           | class           | `fromBinary()`, `encode()`, `decode()`; byte-level and SentencePiece-style BPE |
+| `Database`, `DenoKVDB`                                                                                              | interface/class | `get()` / `add()` / `update()` key-value storage                               |
+| `Config`, `DEFAULT_CONFIG`, `loadConfig()`, `createConfig()`                                                        | types/functions | `config.json` handling (see below)                                             |
 
 ## Architecture
 
-The codebase uses a **two-layer abstraction**:
+Two-layer abstraction:
 
-- **Runtime layer** (`engine/runtime/`): Low-level JAX-JS concerns — device
-  init, tokenizer/weight loading, JIT-compiled inference sessions, memory
-  management, and optax-based training.
-- **Chat layer** (`engine/chat/`): High-level API — `ChatEngine` is a thin
-  facade that delegates to the runtime. Devs just pass a model name and call
-  `engine.chat(input)`.
+- **Runtime layer** (`engine/runtime/`): device init, tokenizer/weight loading,
+  JIT-compiled inference sessions, memory management, safetensors parsing (with
+  BF16 support), and optax-based training.
+- **Chat layer** (`engine/chat/`): `ChatEngine` facade plus sampling and prompt
+  formatting. Pass a model name and call `engine.chat(input)`.
 
-See the [Architecture Guide](docs/wiki/architecture.md) for details.
+Model implementations live in `engine/llm/` (registry in `model.ts`, passes in
+`gemma.ts` / `lfm.ts`, loaders in `llm/loaders/`, KV-cache state in
+`llm/state/`, configs in `llm/configs/`); tokenizers in `engine/tokenizer/`.
+
+See [docs/architecture.md](docs/architecture.md) for the full guide.
+
+## Configuration
+
+`ChatEngine` options (`ChatEngineOptions`):
+
+```typescript
+{
+  backend: "webgpu",      // or "wasm"
+  maxTokens: 4096,
+  sampling: { temperature: 0.8, topK: 64, topP: 0.95, repetitionPenalty: 1 },
+  weightOverrides: { "lfm2.5-350m": "https://mirror.example/model.safetensors" },
+  tokenizerOverrides: { "lfm2.5-350m": "https://mirror.example/tokenizer.json" },
+}
+```
+
+`loadConfig()` reads `config.json` at the project root (or the path in
+`JAX_JS_CONFIG_PATH`) and merges it over `DEFAULT_CONFIG`; `createConfig()`
+resolves model aliases on top of that. All fields are optional. See
+[docs/configuration.md](docs/configuration.md).
+
+## Training
+
+Fine-tuning utilities in `engine/runtime/training.ts`:
+
+```typescript
+import { TrainingRunner } from "@ricardo/jax-llm";
+
+const runner = new TrainingRunner(runtime.definition, {
+  optimizer: "adamw",
+  optimizerOptions: { learningRate: 1e-4 },
+  epochs: 3,
+  batchSize: 4,
+});
+runner.init(modelWeights);
+for await (const epoch of runner.train(dataset)) {
+  console.log(`Epoch ${epoch.index} loss: ${epoch.loss}`);
+}
+```
+
+See [docs/training.md](docs/training.md).
 
 ## Testing
 
-The project includes a comprehensive test suite:
-
 ```bash
-# Run all tests
+# All tests (unit + integration; integration needs --allow-net)
 deno task test
 
-# Run unit tests only
+# Unit tests only (offline-safe)
 deno task test:unit
 
-# Run integration tests (requires network access)
+# Integration tests (downloads weights; skipped without --allow-net)
 deno task test:integration
 
-# Run tests with coverage report
+# Coverage
 deno task test:coverage
 
-# Run tests in watch mode during development
+# Watch mode
 deno task dev
 ```
 
-### Test Structure
-
-- **Unit Tests**: Test individual components in isolation
-  - `engine/tokenizer/tokenizer_test.ts` - Tokenizer encoding/decoding
-  - `engine/llm/model_test.ts` - Model definitions and prompt formatting
-  - `engine/llm/gemma_test.ts` - Gemma model configuration and state
-  - `engine/llm/lfm_test.ts` - LFM model configuration and state
-  - `engine/llm/chat_test.ts` - Chat engine API
-  - `engine/chat/sampler_test.ts` - Logit sampling (temperature, topK, topP)
-  - `engine/chat/prompt_test.ts` - Prompt formatting per model family
-  - `engine/runtime/registry_test.ts` - Model registry & resolution
-  - `engine/runtime/runtime_test.ts` - ModelRuntime lifecycle
-  - `engine/database/database_test.ts` - Database interface
-  - `engine/database/kv_test.ts` - Deno KV implementation
-  - `engine/config_test.ts` - Configuration handling
-
-- **Integration Tests**: Test end-to-end functionality
-  - `integration_test.ts` - Full engine initialization and model downloads
-
-> Integration tests require network access and download model weights. They skip
-> automatically when `--allow-net` is not granted, so `deno test` and
-> `deno task dev` run clean offline. Run them explicitly with
-> `deno task test:integration`.
+Unit tests live next to their modules (`engine/*/*_test.ts`, e.g.
+`tokenizer_test.ts`, `sampler_test.ts`, `prompt_test.ts`, `registry_test.ts`,
+`runtime_test.ts`, `model_test.ts`, `database_test.ts`, `kv_test.ts`,
+`config_test.ts`); end-to-end tests live in `tests/integration_test.ts`.
+`deno task test:unit` currently passes 75 tests.
 
 ## Development
 
-This project is managed with Deno tasks. The most useful commands are:
+```bash
+deno task lint        # deno lint
+deno fmt              # format
+deno task test:unit   # fast feedback loop
+deno doc --lint mod.ts  # JSDoc coverage (0 missing-jsdoc errors required)
+```
 
-- **\`deno fmt\`** – Format all source files according to the shared Prettier
-  configuration.
-- **\`deno lint\`** – Run the built‑in Deno linter; fails on style warnings or
-  potential bugs.
-- **\`deno typecheck\`** – Run a full TypeScript type‑check (no compilation step
-  required).
-- **\`deno prepare\`** – Run formatter, linter, and unit tests in one step
-  (ideal for pre‑commit checks).
-- **\`deno test\`** – Execute the full test suite.
-- **\`deno test:unit\`** – Run only unit tests.
-- **\`deno test:integration\`** – Run integration tests (requires network
-  access; disabled by default).
-- **\`deno test:coverage\`** – Generate a code‑coverage report and upload it to
-  Codecov.
-- **\`deno dev\`** – Watch mode for rapid development; re‑runs tests on file
-  changes.
-
-### Configuration
-
-The library optionally reads a `config.json` at the project root. You can use it
-to override:
-
-- \`chat.backend\` – Choose `"webgpu"` (default) or `"wasm"`.
-- \`chat.modelId\` – The identifier of the model to load.
-- \`chat.maxTokens\` – Maximum token count for generated responses.
-- \`chat.modelOverrides\` – Custom URLs for weights or tokenizer files.
-
-A sample `config.json` is included in the repository. All fields are optional;
-missing values fall back to the defaults defined in \`engine/config.ts\`.
-
-### Examples
-
-A collection of ready‑to‑run examples lives in the \`examples/\` folder. The
-simplest chat demo is \`examples/chat.ts\`.
+JSR requires ≥80% of exported symbols to have documentation; this package is at
+100%. Keep every new export documented. See
+[docs/development.md](docs/development.md) for the publishing checklist.
 
 ## Documentation
 
-Detailed API documentation can be generated with Doxygen or TypeDoc if desired,
-but the source code is heavily commented and the TypeScript types provide
-sufficient guidance for most use cases.
-
-For a high‑level overview of architecture, see the
-[Architecture Guide](docs/wiki/architecture.md).
+- [docs/](docs/) — architecture, API reference, models, configuration, training,
+  and development guides.
+- `deno doc mod.ts` — local API docs; the JSR package page renders the same
+  JSDoc.
+- Source JSDoc on every export is the source of truth; `docs/api.md` is a
+  grouped overview.
 
 ## License
 
-MIT
-
-## Contributing
-
-Thank you for considering contributing to this project! 🙌
-
-- **Code of Conduct** – This project follows the
-  [Contributor Covenant v2.1](CODE_OF_CONDUCT.md).
-- **Security** – If you discover a security vulnerability, please email
-  **security@ricardo.dev** (see [SECURITY.md](SECURITY.md) for details).
-- **Contributing Guide** – Review the [CONTRIBUTING.md](CONTRIBUTING.md) for
-  development setup, testing, and PR workflow.
-
-All contributions are welcome: bug fixes, feature implementations, documentation
-improvements, and new model integrations.
-
-## Continuous Integration
-
-The repository includes robust CI pipelines:
-
-- **CI** – Runs on every push/PR: `deno fmt --check`, `deno lint`,
-  type‑checking, unit + integration tests, coverage upload to Codecov, and
-  dependency vulnerability scanning.
-- **Release** – On pushes to `main`, a GitHub Release is automatically created
-  with a generated changelog via `standard-version`.
-
-CI status badges can be found in the GitHub Actions workflow files under
-`.github/workflows/ci.yml` and `release.yml`.
-
-## Badges
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Deno Version](https://img.shields.io/badge/deno-1.38%2B-brightgreen.svg)](https://deno.land/)
-[![CI Status](https://github.com/ricardo/jax-js-llm/actions/workflows/ci.yml/badge.svg)](https://github.com/ricardo/jax-js-llm/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/ricardo/jax-js-llm?include_prereleases&label=release)](https://github.com/ricardo/jax-js-llm/releases)
+MIT — see [LICENSE](LICENSE).

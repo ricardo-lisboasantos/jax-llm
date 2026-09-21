@@ -93,6 +93,10 @@ export type LoadedChatModel = {
   dispose(): void;
 };
 
+/**
+ * A chat-capable model definition: checkpoint loading, tokenization,
+ * and prompt formatting for one model family.
+ */
 export type ChatModel<Id extends string = string> = {
   id: Id;
   label: string;
@@ -475,6 +479,7 @@ const maple: ChatModel<"maple-preview"> = defineChatModel<
   step: runMapleStep,
 });
 
+/** Registry of all built-in chat models, keyed by model ID. */
 export const CHAT_MODELS = {
   [gemma.id]: gemma,
   [lfm.id]: lfm,
@@ -485,7 +490,10 @@ export const CHAT_MODELS = {
   [maple.id]: maple,
 };
 
+/** Union of built-in chat model IDs from {@linkcode CHAT_MODELS}. */
 export type ChatModelId = keyof typeof CHAT_MODELS;
 
+/** List of all built-in chat model IDs. */
 export const CHAT_MODEL_IDS = Object.keys(CHAT_MODELS) as ChatModelId[];
+/** Default chat model used when no model ID is provided. */
 export const DEFAULT_CHAT_MODEL_ID: ChatModelId = lfm.id;

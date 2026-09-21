@@ -5,8 +5,8 @@
  * `deno test` and `deno task dev` run clean without `--allow-net`.
  */
 import { assert } from "@std/assert";
-import { ChatEngine } from "./mod.ts";
-import { resolveModel } from "./engine/runtime/registry.ts";
+import { ChatEngine } from "../mod.ts";
+import { resolveModel } from "../engine/runtime/registry.ts";
 
 async function hasNetwork(): Promise<boolean> {
   try {

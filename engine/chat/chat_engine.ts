@@ -24,6 +24,11 @@ import type { RuntimeConfig, SamplingDefaults } from "../runtime/types.ts";
 import { resolveSamplingDefaults, sampleLogits } from "./sampler.ts";
 import type { ChatEngineOptions, ChatMessage, SystemInfo } from "./types.ts";
 
+/**
+ * High-level chat API: pass a model name, call `init()`, then `chat()`.
+ * Delegates device/weight management to `ModelRuntime` and token
+ * selection to the sampler module.
+ */
 export class ChatEngine {
   private runtime: ModelRuntime;
   private maxTokens: number;
@@ -161,6 +166,7 @@ export class ChatEngine {
 
   // ── Internal ───────────────────────────────────────────────────────────
 
+  /** Sample the next token from logits using the resolved sampling config. */
   private async sampleNextToken(
     logits: np.Array,
     previousTokens: number[],

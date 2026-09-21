@@ -270,14 +270,19 @@ class SentencePieceBpeEncoder {
  *     Uses a custom Unicode-level BPE encoder.
  */
 export class HuggingFaceBpeTokenizer {
+  /** Beginning-of-sequence token ID. */
   readonly bosToken: number;
+  /** End-of-sequence token ID. */
   readonly eosToken: number;
+  /** Padding token ID. */
   readonly padToken: number;
+  /** IDs of special tokens filtered from generated output. */
   readonly specialTokenIds: Set<number>;
   readonly #encoding: tokenizers.BpeEncoding | null;
   readonly #spEncoder: SentencePieceBpeEncoder | null;
   readonly #isSentencePieceStyle: boolean;
 
+  /** Parse tokenizer data into a usable BPE tokenizer. */
   constructor(data: HuggingFaceBpeData) {
     if (data.model.type !== "BPE") {
       throw new Error(`Expected a BPE tokenizer, found ${data.model.type}`);
@@ -376,11 +381,13 @@ export class HuggingFaceBpeTokenizer {
     }
   }
 
+  /** Build a tokenizer from raw `tokenizer.json` bytes. */
   static fromBinary(data: Uint8Array): HuggingFaceBpeTokenizer {
     const parsed = JSON.parse(new TextDecoder().decode(data));
     return new HuggingFaceBpeTokenizer(parsed);
   }
 
+  /** Encode text into token IDs, including special tokens. */
   encode(text: string): number[] {
     if (this.#isSentencePieceStyle) {
       // Normalize: prepend ▁, replace spaces with ▁.
@@ -390,6 +397,7 @@ export class HuggingFaceBpeTokenizer {
     return this.#encoding!.encodeWithSpecialTokens(text);
   }
 
+  /** Decode token IDs back into text. */
   decode(tokens: number[]): string {
     if (this.#isSentencePieceStyle) {
       let text = this.#spEncoder!.decode(tokens);

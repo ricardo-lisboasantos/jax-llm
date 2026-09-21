@@ -14,12 +14,21 @@ import { runEmbedding } from "./layers/gemma/gemma_embedding.ts";
 import { layerRopeTheta } from "./layers/gemma/gemma_rope_theta.ts";
 import { type RMSNorm, runRMSNorm } from "./layers/gemma/gemma_rms_norm.ts";
 
+/** Gemma model weights: token embeddings, decoder layers, and final norm. */
 export type GemmaModel = {
   embedTokens: GemmaLinear;
   layers: GemmaDecoderLayer[];
   norm: RMSNorm;
 };
 
+/**
+ * Run a Gemma prefill pass over the full prompt.
+ *
+ * @param model Model weights.
+ * @param tokenIds Prompt token IDs.
+ * @param state Mutable KV-cache state updated in place.
+ * @returns Logits for the last prompt token.
+ */
 export function runGemmaPrefill(
   model: GemmaModel,
   tokenIds: np.Array,
@@ -53,6 +62,14 @@ export function runGemmaPrefill(
   return logits;
 }
 
+/**
+ * Run a single Gemma decode step for one generated token.
+ *
+ * @param model Model weights.
+ * @param tokenId The most recently generated token ID.
+ * @param state Mutable KV-cache state updated in place.
+ * @returns Next-token logits.
+ */
 export function runGemmaStep(
   model: GemmaModel,
   tokenId: number,

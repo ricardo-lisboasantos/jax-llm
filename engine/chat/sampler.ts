@@ -8,6 +8,7 @@
 
 import type { SamplingDefaults } from "../runtime/types.ts";
 
+/** Sampling parameters for {@linkcode sampleLogits}. */
 export type SamplingOptions = {
   temperature: number;
   topK: number;
