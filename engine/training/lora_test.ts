@@ -36,6 +36,16 @@ Deno.test("unit: RamOffload put/get/evict", () => {
 });
 
 Deno.test("unit: NvmeOffload put/get/evict (tmp dir)", async () => {
+  // Needs write access for the temp dir + backing files. Skips when running
+  // without flags (bare `deno test`); CI runs `deno test -A`, as does
+  // `deno task test`.
+  const perm = await Deno.permissions.query({ name: "write" });
+  if (perm.state !== "granted") {
+    console.log(
+      "SKIP unit: NvmeOffload needs --allow-write (run `deno task test`)",
+    );
+    return;
+  }
   const dir = await Deno.makeTempDir();
   const nvme = new NvmeOffload({ dir });
   await nvme.put("t1", new Uint8Array([9, 9]));

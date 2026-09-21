@@ -10,7 +10,17 @@ Deno.test("unit: DEFAULT_CONFIG has sane values", () => {
   assert(DEFAULT_CONFIG.chat.maxTokens > 0);
 });
 
-Deno.test("unit: loadConfig returns defaults when no file", () => {
+Deno.test("unit: loadConfig returns defaults when no file", async () => {
+  // Needs env access for the JAX_JS_CONFIG_PATH override. Skips when running
+  // without flags (bare `deno test`); CI runs `deno test -A`, as does
+  // `deno task test`.
+  const perm = await Deno.permissions.query({ name: "env" });
+  if (perm.state !== "granted") {
+    console.log(
+      "SKIP unit: loadConfig needs --allow-env (run `deno task test`)",
+    );
+    return;
+  }
   // No config.json in repo root by default — falls back to defaults.
   // Point at a definitely-missing file to force the fallback path.
   Deno.env.set("JAX_JS_CONFIG_PATH", "./does-not-exist-12345.json");

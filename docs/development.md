@@ -21,7 +21,11 @@ Defined in `deno.json`:
   `gemma_test.ts`, `lfm_test.ts`, `chat_test.ts`, `database_test.ts`,
   `kv_test.ts`, `config_test.ts`, `caches_test.ts`, `lora_test.ts`.
 - End-to-end tests live in `tests/integration_test.ts` (network-gated).
-- `deno task test:unit` passes 75 tests.
+- `deno task test:unit` passes 79 tests.
+- Permission-gated tests (`config_test.ts` needs env, `lora_test.ts` needs
+  write, integration needs net) skip gracefully when their permission is denied,
+  so bare `deno test` stays green; `deno task test` (full flags) and CI
+  (`deno test -A`) execute everything.
 
 ## Documentation coverage
 

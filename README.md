@@ -215,7 +215,11 @@ Unit tests live next to their modules (`engine/*/*_test.ts`, e.g.
 `tokenizer_test.ts`, `sampler_test.ts`, `prompt_test.ts`, `registry_test.ts`,
 `runtime_test.ts`, `model_test.ts`, `database_test.ts`, `kv_test.ts`,
 `config_test.ts`); end-to-end tests live in `tests/integration_test.ts`.
-`deno task test:unit` currently passes 75 tests.
+`deno task test:unit` currently passes 79 tests.
+
+> Tests needing permissions (env, write, net) skip gracefully when denied, so
+> bare `deno test` stays green; `deno task test` and CI (`deno test -A`) execute
+> everything.
 
 ## Development
 
