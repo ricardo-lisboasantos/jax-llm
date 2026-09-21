@@ -216,22 +216,28 @@ function bf16ToF32(bytes: Uint8Array): Float32Array<ArrayBuffer> {
   return result;
 }
 
-/** Replicate the alignedData helper from @jax-js/loaders. */
-function alignedData(
-  ctor:
-    | typeof Float16Array
-    | typeof Float32Array
-    | typeof Float64Array
-    | typeof Int16Array
-    | typeof Int32Array
-    | typeof BigInt64Array
-    | typeof Uint16Array
-    | typeof Uint32Array
-    | typeof BigUint64Array,
+/**
+ * Replicate the alignedData helper from @jax-js/loaders.
+ *
+ * `ctor` is typed as a generic buffer-backed constructor (instead of a union
+ * of `typeof` array types) so `new ctor(buffer, byteOffset, length)` stays
+ * well-typed across TS lib versions — unions of constructor types only
+ * expose their common (0-1 argument) overloads to `new`, which newer
+ * checkers (e.g. `jsr publish`) reject.
+ */
+function alignedData<T extends ArrayBufferView>(
+  ctor: {
+    new (
+      buffer: ArrayBufferLike,
+      byteOffset?: number,
+      length?: number,
+    ): T;
+    readonly BYTES_PER_ELEMENT: number;
+  },
   buffer: ArrayBuffer,
   byteOffset: number,
   length: number,
-) {
+): T {
   if (byteOffset % ctor.BYTES_PER_ELEMENT === 0) {
     return new ctor(buffer, byteOffset, length);
   }
