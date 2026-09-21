@@ -204,6 +204,11 @@ deno task test:unit
 # Integration tests (downloads weights; skipped without --allow-net)
 deno task test:integration
 
+# Benchmarks: TTFT + tokenize/prefill/decode throughput
+# (offline harness in engine/bench/ + live-model sweep in tests/bench_test.ts;
+# live run downloads weights and skips without net/GPU)
+deno task bench
+
 # Coverage
 deno task test:coverage
 

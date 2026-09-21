@@ -31,3 +31,6 @@ export * from "./database/kv.ts";
 
 // Config
 export * from "./config.ts";
+
+// Benchmarks (TTFT, encode/prefill/decode throughput)
+export * from "./bench/index.ts";
