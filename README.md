@@ -234,6 +234,10 @@ JSR requires ≥80% of exported symbols to have documentation; this package is a
 100%. Keep every new export documented. See
 [docs/development.md](docs/development.md) for the publishing checklist.
 
+CI (`.github/workflows/ci.yml`) runs `fmt --check`, `lint`, `check --all`, and
+`test -A` on every push and PR, and publishes to JSR on pushes to `main` — see
+[docs/development.md](docs/development.md#cicd).
+
 ## Documentation
 
 - [docs/](docs/) — architecture, API reference, models, configuration, training,

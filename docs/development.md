@@ -27,6 +27,23 @@ Defined in `deno.json`:
   so bare `deno test` stays green; `deno task test` (full flags) and CI
   (`deno test -A`) execute everything.
 
+## CI/CD
+
+Defined in `.github/workflows/ci.yml`. Triggers on every push, every pull
+request, and manually via `workflow_dispatch`.
+
+- `verify` job (Deno v2.x via `denoland/setup-deno@v2`), steps run in order and
+  stop on first failure:
+  1. `deno fmt --check` — formatting must already be clean (run `deno fmt`
+     locally).
+  2. `deno lint`.
+  3. `deno check --all` — full type check.
+  4. `deno test -A` — entire suite, including the network integration test.
+- `publish` job (`needs: verify`, only for pushes to `main`, never PRs):
+  `npx jsr publish` using OIDC trusted publishing (`id-token: write`), so no
+  token is stored in repo secrets. Republishing an unchanged version is a
+  harmless no-op (`jsr` reports "already published").
+
 ## Documentation coverage
 
 JSR requires ≥80% of exported symbols to carry JSDoc. This package is at 100% —
