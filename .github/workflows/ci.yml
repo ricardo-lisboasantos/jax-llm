@@ -11,9 +11,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: denoland/setup-deno@v2
+      - name: Setup Deno
+        id: setup-deno
+        uses: denoland/setup-deno@v2
+        continue-on-error: true
         with:
           deno-version: v2.x
+      - name: Setup Deno (fallback installer)
+        # setup-deno downloads from GitHub Releases, which occasionally 504s.
+        # The official installer uses a different CDN (dl.deno.land), so it
+        # survives those outages.
+        if: steps.setup-deno.outcome == 'failure'
+        run: |
+          curl -fsSL https://deno.land/install.sh | sh
+          echo "$HOME/.deno/bin" >> "$GITHUB_PATH"
+          deno --version
       - name: Format check
         run: deno fmt --check
       - name: Lint
