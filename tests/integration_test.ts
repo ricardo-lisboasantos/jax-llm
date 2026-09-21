@@ -41,8 +41,31 @@ Deno.test("integration: ChatEngine init + generate (needs network)", async () =>
     console.log("SKIP integration: no network access");
     return;
   }
-  const engine = new ChatEngine("lfm2.5-350m", { maxTokens: 16 });
-  await engine.init();
-  const reply = await engine.generate("Say hi in five words or less.");
-  assert(reply.length > 0, "expected non-empty reply");
+  // CI containers have no GPU, so webgpu init throws
+  // ("Backend not initialized: webgpu"). Prefer webgpu, fall back to wasm,
+  // and skip only if neither backend initializes.
+  for (const backend of ["webgpu", "wasm"] as const) {
+    const engine = new ChatEngine("lfm2.5-350m", { maxTokens: 16, backend });
+    try {
+      await engine.init();
+    } catch (e) {
+      if (!isBackendUnavailable(e)) throw e;
+      console.log(`SKIP backend ${backend}: ${(e as Error).message}`);
+      continue;
+    }
+    try {
+      const reply = await engine.generate("Say hi in five words or less.");
+      assert(reply.length > 0, "expected non-empty reply");
+    } finally {
+      engine.dispose();
+    }
+    return;
+  }
+  console.log("SKIP integration: no usable backend (webgpu nor wasm)");
 });
+
+/** True for init failures caused by a missing compute backend (e.g. no GPU). */
+function isBackendUnavailable(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  return msg.includes("Backend not initialized") || msg.includes("WebGPU");
+}
