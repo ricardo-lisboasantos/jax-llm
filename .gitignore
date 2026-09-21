@@ -1,0 +1,20 @@
+# Deno / coverage
+cov_profile/
+cov_profile.lcov
+coverage/
+.opfs/
+dist/
+
+# Dependencies
+node_modules/
+
+# macOS / editors
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local env overrides (never commit secrets)
+.env
+.env.local
