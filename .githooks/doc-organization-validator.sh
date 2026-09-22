@@ -15,10 +15,11 @@ NC='\033[0m'
 FAILED=0
 WARNINGS=0
 
-# Allowed root-level docs (minimal - only README.md)
+# Allowed root-level docs (minimal - README + legal notices)
 # All other .md files must be in docs/ subfolders
 ALLOWED_ROOT=(
   "README.md"
+  "DISCLAIMER.md"
 )
 
 # Allowed doc directories
