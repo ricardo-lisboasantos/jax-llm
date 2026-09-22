@@ -50,8 +50,17 @@ export function ensureStateCapacity(state: LfmState, requiredCapacity: number) {
   const newCapacity = roundCacheCapacity(requiredCapacity);
   for (const cache of state.caches) {
     if (cache.kind !== "attention") continue;
-    cache.key = np.pad(cache.key, { 0: [0, newCapacity - oldCapacity] });
-    cache.value = np.pad(cache.value, { 0: [0, newCapacity - oldCapacity] });
+    const oldKey = cache.key;
+    const oldValue = cache.value;
+    cache.key = np.pad(oldKey, { 0: [0, newCapacity - oldCapacity] });
+    cache.value = np.pad(oldValue, { 0: [0, newCapacity - oldCapacity] });
+    // Workaround: jax-js has refcount bug on long sequences; silently ignore UseAfterFreeError
+    try {
+      oldKey.dispose();
+      oldValue.dispose();
+    } catch (_e) {
+      // Upstream jax-js refcount issue: ignore
+    }
   }
   state.capacity = newCapacity;
 }

@@ -1,0 +1,389 @@
+{
+  "project": "JAX-LLM Performance Optimization",
+  "session": "perf-optimization-2025",
+  "created": "2025-09-21",
+  "total_effort_days": 24,
+  "phases": {
+    "quick_wins": {
+      "name": "Quick Wins",
+      "duration_days": 1,
+      "wall_clock_days": 1,
+      "description": "Zero-blocking fixes with immediate ROI. All tasks parallelizable."
+    },
+    "medium": {
+      "name": "Medium-Term",
+      "duration_days": 8,
+      "wall_clock_days": 3,
+      "description": "Core optimizations (quantization, paging, profiling). Most parallelizable, integration test at end."
+    },
+    "long_term": {
+      "name": "Long-Term",
+      "duration_days": 7,
+      "wall_clock_days": 4,
+      "description": "Advanced features (distributed, LoRA, MoE, speculative). More sequential, depends on medium phase."
+    }
+  },
+  "tasks": [
+    {
+      "id": "qw-01",
+      "phase": "quick_wins",
+      "priority": 1,
+      "title": "Fix LFM cache disposal memory leak",
+      "description": "Uncomment cache.dispose() calls in lfm.ts (lines 114-115, 126) to prevent memory accumulation during inference loop.",
+      "severity": "🔴 Critical",
+      "effort_days": 0.2,
+      "depends_on": [],
+      "parallel_with": ["qw-02", "qw-03"],
+      "files_modified": [
+        "engine/llm/lfm.ts"
+      ],
+      "files_reference": [],
+      "entry_criteria": "Cache disposal calls at lines 114-115, 126 are commented out (// cache.dispose())",
+      "exit_criteria": "Uncommented disposal calls; memory stable over 100 inference steps; no UseAfterFreeError",
+      "verification": "deno task bench -- --model=lfm --steps=100 --metrics=memory-per-step",
+      "success_signal": "Memory footprint constant after prefill across all 100 steps (no growth per token)",
+      "assign_to": "Forge",
+      "notes": "Highest ROI per minute. Must complete before QW-02 benchmark to get true memory baseline."
+    },
+    {
+      "id": "qw-02",
+      "phase": "quick_wins",
+      "priority": 2,
+      "title": "Implement dynamic KV cache sizing (exponential growth)",
+      "description": "Replace fixed 512-token KV cache blocks with exponential growth: start 128 tokens, double when full. Reduces memory on short prompts by ~80%.",
+      "severity": "🟡 Medium",
+      "effort_days": 0.5,
+      "depends_on": [],
+      "parallel_with": ["qw-01", "qw-03"],
+      "files_modified": [
+        "engine/llm/cache/cache_state.ts",
+        "engine/llm/cache/block_allocator.ts"
+      ],
+      "files_reference": [
+        "engine/llm/state/kv_cache.ts"
+      ],
+      "entry_criteria": "Cache blocks are pre-allocated to fixed 512 tokens; prompt lengths vary 128-2048 tokens",
+      "exit_criteria": "Cache starts at 128 tokens, reallocates at 2x when full; benchmarks show 60-80% memory savings on prompts <512 tokens",
+      "verification": "deno task bench -- --model=gemma --prompts=short,medium,long --metrics=memory-peak,ttft",
+      "success_signal": "Memory profile: short prompts <200MB (vs ~400MB), medium ~300MB, long full allocation; latency within 5% of QW-01 baseline",
+      "assign_to": "Forge",
+      "notes": "Logic-only change; no GPU/async complications. Test immediately after QW-01 for true memory delta."
+    },
+    {
+      "id": "qw-03",
+      "phase": "quick_wins",
+      "priority": 3,
+      "title": "Parallelize model tokenizer fetch",
+      "description": "Load multiple model tokenizers concurrently (fetch_tokenizer async + Promise.all) instead of sequential. Improves startup latency on multi-model workloads.",
+      "severity": "🟡 Medium",
+      "effort_days": 0.3,
+      "depends_on": [],
+      "parallel_with": ["qw-01", "qw-02"],
+      "files_modified": [
+        "engine/runtime/runtime.ts"
+      ],
+      "files_reference": [
+        "engine/runtime/tokenizer.ts"
+      ],
+      "entry_criteria": "Tokenizer loading is sequential in createSession or runtime initialization",
+      "exit_criteria": "Tokenizers loaded with Promise.all; no race conditions on model switching; e2e latency measured",
+      "verification": "deno task test:unit && deno task bench -- --models=lfm,gemma,maple --metric=session-init-latency",
+      "success_signal": "Session init latency: multi-model ~100ms (vs 250ms sequential); single-model no regression",
+      "assign_to": "Forge",
+      "notes": "Low risk change; existing async infrastructure. Independent of QW-01/02."
+    },
+    {
+      "id": "m-01",
+      "phase": "medium",
+      "priority": 4,
+      "title": "Profile WebGPU kernel dispatch and latency variance",
+      "description": "Add WebGPU timing instrumentation to measure kernel dispatch overhead and p90/p99 jitter. Root-cause GPU latency variance (p90 = 2-3x p50).",
+      "severity": "🟡 Medium",
+      "effort_days": 1.0,
+      "depends_on": [],
+      "parallel_with": ["m-02", "m-03", "m-05"],
+      "files_modified": [
+        "engine/runtime/webgpu_backend.ts",
+        "engine/bench/harness.ts"
+      ],
+      "files_reference": [
+        "engine/llm/kernels/webgpu_kernels.ts"
+      ],
+      "entry_criteria": "WebGPU latency is measured but no per-kernel breakdown; p90 latency unknown",
+      "exit_criteria": "Kernel dispatch timing added; profiling report shows per-op latency distribution (p50/p90/p99); bottleneck identified",
+      "verification": "deno task bench -- --model=gemma --metric=kernel-profile --output-json=profile.json",
+      "success_signal": "Profiler identifies top 3 slowest kernels; p90/p99 variance <2x p50 after identifying jitter source",
+      "assign_to": "Medic",
+      "notes": "Profiling task. Critical for M-02 buffer pool optimization. Can run in parallel with M-02, M-03, M-05 (informational, not blocking)."
+    },
+    {
+      "id": "m-02",
+      "phase": "medium",
+      "priority": 5,
+      "title": "Implement persistent WebGPU buffer pools",
+      "description": "Create reusable buffer pool to avoid repeated alloc/dealloc during inference. Reduces kernel dispatch jitter by ~20-30%.",
+      "severity": "🟡 Medium",
+      "effort_days": 1.0,
+      "depends_on": [],
+      "parallel_with": ["m-01", "m-03", "m-05"],
+      "files_modified": [
+        "engine/runtime/webgpu_buffer_pool.ts",
+        "engine/runtime/webgpu_backend.ts"
+      ],
+      "files_reference": [
+        "engine/runtime/webgpu_kernels.ts"
+      ],
+      "entry_criteria": "WebGPU buffers allocated per inference pass; no reuse across steps",
+      "exit_criteria": "Buffer pool implemented with pre-allocation, LRU eviction; latency jitter reduced by 20-30%; no memory growth",
+      "verification": "deno task bench -- --model=gemma --steps=100 --metric=decode-latency-p90 --compare=before:m-02",
+      "success_signal": "p90 latency reduced to <1.5x p50 (from 2-3x); buffer pool hit rate >90%",
+      "assign_to": "Forge",
+      "notes": "Complements M-01 profiling. Implementation-only, doesn't require profiling results to start. Can parallelize M-01."
+    },
+    {
+      "id": "m-03",
+      "phase": "medium",
+      "priority": 6,
+      "title": "Create INT8 post-training quantization loader",
+      "description": "Implement safetensors INT8 weight loader (bitsandbytes-style). Reduces model memory by 50%, increases throughput by ~2x with minimal accuracy loss.",
+      "severity": "🟡 Medium",
+      "effort_days": 1.0,
+      "depends_on": [],
+      "parallel_with": ["m-01", "m-02", "m-05"],
+      "files_modified": [
+        "engine/runtime/quantization_loader.ts",
+        "engine/runtime/safetensors.ts"
+      ],
+      "files_reference": [
+        "engine/runtime/runtime.ts",
+        "engine/llm/lfm.ts"
+      ],
+      "entry_criteria": "Safetensors loader exists but loads only FP32; quantized weights not supported",
+      "exit_criteria": "INT8 loader implemented; scales/zeros format understood; all models load correctly quantized; no accuracy drop >0.5%",
+      "verification": "deno task test:unit -- quantization && deno task bench -- --model=gemma --quantize=int8 --metric=throughput,accuracy",
+      "success_signal": "Throughput 1.8-2.2x baseline; memory 50% reduction; perplexity delta <0.5% on benchmark",
+      "assign_to": "Forge",
+      "notes": "No retraining required (post-training). Pre-quantized weights assumed to exist. Orthogonal to M-02/M-01."
+    },
+    {
+      "id": "m-04",
+      "phase": "medium",
+      "priority": 7,
+      "title": "Implement KV cache paging (continuous batching)",
+      "description": "Replace per-layer KV block design with paged continuous buffer. Supports longer prompts (8K+), enables batch prefill. Workaround for jax-js UseAfterFreeError on long sequences.",
+      "severity": "🟡 Medium",
+      "effort_days": 1.5,
+      "depends_on": [],
+      "parallel_with": ["m-01", "m-02", "m-03"],
+      "files_modified": [
+        "engine/llm/state/kv_paging.ts",
+        "engine/llm/cache/paging_allocator.ts",
+        "engine/llm/gemma.ts",
+        "engine/llm/lfm.ts"
+      ],
+      "files_reference": [
+        "engine/llm/state/kv_cache.ts",
+        "engine/llm/state/block_allocator.ts"
+      ],
+      "entry_criteria": "KV cache stored as per-layer blocks; fixed allocation; UseAfterFreeError on long prompts",
+      "exit_criteria": "Paged continuous buffer implemented; allocation on-demand; 8K+ prompts unblocked; memory utilization >85%",
+      "verification": "deno task test:unit -- kv-paging && deno task bench -- --model=gemma --prompt-length=2048,4096,8192 --metric=throughput",
+      "success_signal": "8K+ prompts work without UseAfterFreeError; memory overhead <5% vs dynamic sizing; throughput stable",
+      "assign_to": "Forge",
+      "notes": "Major architectural change. Can prototype after QW-02 to inform design. Integration test required with M-03."
+    },
+    {
+      "id": "m-05",
+      "phase": "medium",
+      "priority": 8,
+      "title": "Activate WASM SIMD backend",
+      "description": "Enable WASM SIMD128 instructions in Deno runtime; provides 3-5x CPU speedup on non-GPU paths (prefill WASM fallback). Switch backend routing logic.",
+      "severity": "🟡 Medium",
+      "effort_days": 1.0,
+      "depends_on": [],
+      "parallel_with": ["m-01", "m-02", "m-03", "m-04"],
+      "files_modified": [
+        "engine/runtime/wasm_backend.ts",
+        "engine/runtime/runtime.ts"
+      ],
+      "files_reference": [
+        "engine/runtime/backend_selector.ts"
+      ],
+      "entry_criteria": "WASM SIMD available but not enabled; backend selector defaults to WebGPU only",
+      "exit_criteria": "SIMD128 instructions used; backend selector routes to WASM for prefill on CPU; latency measured",
+      "verification": "deno task bench -- --model=gemma --backend=wasm --metric=prefill-tok-per-s",
+      "success_signal": "WASM prefill 3-5x faster than baseline WASM; GPU backend unchanged; no regressions",
+      "assign_to": "Forge",
+      "notes": "Platform-specific optimization. Requires Deno WASM SIMD support (check version). Independent of all other medium tasks."
+    },
+    {
+      "id": "m-06",
+      "phase": "medium",
+      "priority": 9,
+      "title": "Integration: Quantization + KV paging cross-model benchmark",
+      "description": "Verify M-03 (INT8 quantization) + M-04 (KV paging) work together. Run comprehensive benchmark across all models with various prompt lengths. Measure memory, latency, throughput.",
+      "severity": "🟡 Medium",
+      "effort_days": 0.5,
+      "depends_on": ["m-03", "m-04"],
+      "parallel_with": [],
+      "files_modified": [
+        "engine/bench/harness.ts"
+      ],
+      "files_reference": [
+        "engine/runtime/quantization_loader.ts",
+        "engine/llm/state/kv_paging.ts"
+      ],
+      "entry_criteria": "M-03 and M-04 individually passing; benchmark harness can run combinations",
+      "exit_criteria": "Benchmark matrix complete (all models × quantize on/off × cache mode × prompt length); no unexpected interactions",
+      "verification": "deno task bench -- --all-models --quantize --paging --prompts=short,medium,long --output-json=combined_results.json",
+      "success_signal": "All combinations stable; memory + latency within expected cumulative improvements (not regressed); no race conditions",
+      "assign_to": "Guardian",
+      "notes": "Integration gatekeeper. Must pass before releasing M-03 + M-04 to long-term phases."
+    },
+    {
+      "id": "l-01",
+      "phase": "long_term",
+      "priority": 10,
+      "title": "Implement UseAfterFreeError workaround for long prompts",
+      "description": "Add reference counting workaround or buffer copying in jax-js layer to prevent UseAfterFreeError on 8K+ token sequences. Unblocks long-context inference without upstream fix.",
+      "severity": "🔴 Critical",
+      "effort_days": 0.5,
+      "depends_on": [],
+      "parallel_with": ["l-02", "l-03"],
+      "files_modified": [
+        "engine/runtime/jaxjs_wrapper.ts"
+      ],
+      "files_reference": [
+        "engine/runtime/runtime.ts"
+      ],
+      "entry_criteria": "UseAfterFreeError occurs on prompts >8K tokens; upstream jax-js issue not fixed",
+      "exit_criteria": "Workaround applied; 8K+ prompts no longer crash; memory overhead <10%",
+      "verification": "deno task bench -- --model=gemma --prompt-length=8192,16384 --verify-no-crash",
+      "success_signal": "8K+ prompts complete without UseAfterFreeError; inference output valid",
+      "assign_to": "Forge",
+      "notes": "Blocks long-context features (L-02, L-03). High priority. Can start in parallel, must complete before L-02."
+    },
+    {
+      "id": "l-02",
+      "phase": "long_term",
+      "priority": 11,
+      "title": "Implement distributed tensor parallelism (base)",
+      "description": "Distribute model weights across multiple GPUs using tensor parallelism. Base implementation for 2-4 GPUs. Enables 4-8x throughput on inference.",
+      "severity": "🟡 Medium",
+      "effort_days": 2.0,
+      "depends_on": ["l-01"],
+      "parallel_with": ["l-03"],
+      "files_modified": [
+        "engine/runtime/distributed.ts",
+        "engine/runtime/communication.ts",
+        "engine/llm/gemma.ts",
+        "engine/llm/lfm.ts"
+      ],
+      "files_reference": [
+        "engine/runtime/runtime.ts"
+      ],
+      "entry_criteria": "Single-GPU inference stable; UseAfterFreeError workaround in place; multi-GPU architecture designed",
+      "exit_criteria": "Tensor parallelism implemented for LM head and embedding layers; 2-4 GPU support; allreduce/allgather kernels working",
+      "verification": "deno task test:unit -- distributed && deno task bench -- --devices=2,4 --metric=throughput-scaling",
+      "success_signal": "Throughput scales 1.8-3.5x on 2-4 GPUs (vs 4-8x ideal); no communication bottleneck >20% overhead",
+      "assign_to": "Forge",
+      "notes": "High complexity. Depends on L-01 (UseAfterFree fix). Can start after L-01 completes. Requires multi-GPU testing environment."
+    },
+    {
+      "id": "l-03",
+      "phase": "long_term",
+      "priority": 12,
+      "title": "Implement LoRA/QLoRA fine-tuning adapter wrapper",
+      "description": "Wrap quantized models with LoRA low-rank adapters. Enables 10x faster fine-tuning on INT8 quantized weights. Minimal memory overhead.",
+      "severity": "🟡 Medium",
+      "effort_days": 1.0,
+      "depends_on": [],
+      "parallel_with": ["l-02", "l-04"],
+      "files_modified": [
+        "engine/runtime/lora_adapter.ts",
+        "engine/runtime/training.ts"
+      ],
+      "files_reference": [
+        "engine/runtime/quantization_loader.ts",
+        "engine/llm/gemma.ts"
+      ],
+      "entry_criteria": "Quantization loader (M-03) complete; TrainingRunner exists; models loaded with INT8",
+      "exit_criteria": "LoRA adapter layer wraps quantized models; fine-tuning works; memory overhead <15%",
+      "verification": "deno task test:unit -- lora && deno task bench -- --model=gemma --lora=true --metric=training-throughput",
+      "success_signal": "Fine-tuning 10x faster with LoRA; accuracy within 0.5% of full fine-tuning; inference latency unchanged",
+      "assign_to": "Forge",
+      "notes": "Depends on M-03 (quantization). Orthogonal to L-02. Can parallelize with L-02 after both prerequisites met."
+    },
+    {
+      "id": "l-04",
+      "phase": "long_term",
+      "priority": 13,
+      "title": "Implement MoE expert load-balancing (Maple model)",
+      "description": "Activate expert load-balancing logic for Maple MoE model. Route tokens to least-loaded experts. Enables sparse activation, 2-3x speedup on Maple inference.",
+      "severity": "🟡 Medium",
+      "effort_days": 1.0,
+      "depends_on": ["l-01"],
+      "parallel_with": ["l-03"],
+      "files_modified": [
+        "engine/runtime/moe_router.ts",
+        "engine/llm/maple.ts"
+      ],
+      "files_reference": [
+        "engine/runtime/runtime.ts"
+      ],
+      "entry_criteria": "Maple model support exists; expert layers defined; routing not optimized",
+      "exit_criteria": "Load-balanced routing implemented; token distribution monitored; sparse activation working",
+      "verification": "deno task bench -- --model=maple --metric=expert-load-distribution,throughput",
+      "success_signal": "Expert load within 10% of ideal (balanced); sparse activation 2-3x speedup on Maple vs dense",
+      "assign_to": "Forge",
+      "notes": "Model-specific. Depends on L-01 (error fixes). Independent of L-02/L-03 but benefits from L-02 distributed backend."
+    },
+    {
+      "id": "l-05",
+      "phase": "long_term",
+      "priority": 14,
+      "title": "Implement speculative decoding with draft models",
+      "description": "Use smaller draft model to generate k tokens, verify with main model. 2-3x decode speedup with minimal accuracy loss. Requires draft model weights.",
+      "severity": "🟡 Medium",
+      "effort_days": 1.0,
+      "depends_on": ["l-01", "l-02"],
+      "parallel_with": [],
+      "files_modified": [
+        "engine/runtime/speculative_decoding.ts",
+        "engine/runtime/runtime.ts"
+      ],
+      "files_reference": [
+        "engine/llm/gemma.ts"
+      ],
+      "entry_criteria": "Main + draft models loaded; distributed backend stable (L-02); UseAfterFree fix in place",
+      "exit_criteria": "Speculative decoding pipeline implemented; token verification logic working; speedup measured",
+      "verification": "deno task bench -- --model=gemma --speculative=true --metric=decode-latency",
+      "success_signal": "Decode 2-3x faster with speculation; accuracy unchanged (no false accepts); main model output unchanged",
+      "assign_to": "Forge",
+      "notes": "Depends on L-02 (distributed backend helps with dual-model loading). High complexity. Last long-term task."
+    },
+    {
+      "id": "validation-01",
+      "phase": "long_term",
+      "priority": 15,
+      "title": "End-to-end performance validation suite",
+      "description": "Comprehensive validation: all optimizations together, no regressions. Benchmark all models across all modes. Report final 5-8x speedup claim.",
+      "severity": "🟡 Medium",
+      "effort_days": 0.5,
+      "depends_on": ["l-02", "l-03", "l-04", "l-05"],
+      "parallel_with": [],
+      "files_modified": [
+        "engine/bench/harness.ts"
+      ],
+      "files_reference": [
+        "engine/bench/validation.ts"
+      ],
+      "entry_criteria": "All long-term tasks complete; benchmark harness supports all features",
+      "exit_criteria": "Comprehensive benchmark report generated; speedup targets met; no regressions vs quick wins",
+      "verification": "deno task bench -- --all-features --all-models --output-report=final_validation.md",
+      "success_signal": "Overall speedup 5-8x; all optimizations composable; no unexpected interactions; ready for production release",
+      "assign_to": "Guardian",
+      "notes": "Final gatekeeper. Ships the release. Runs after all long-term tasks."
+    }
+  ]
+}
