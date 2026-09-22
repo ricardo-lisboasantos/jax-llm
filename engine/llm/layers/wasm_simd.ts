@@ -21,7 +21,7 @@
 export function isWasmSimdAvailable(): boolean {
   try {
     // Test if WebAssembly SIMD is supported
-    const memory = new WebAssembly.Memory({ initial: 256, maximum: 512 });
+    const _memory = new WebAssembly.Memory({ initial: 256, maximum: 512 });
     const buffer = new ArrayBuffer(64);
     return buffer.byteLength > 0 && typeof Float32Array !== "undefined";
   } catch {
@@ -74,7 +74,8 @@ export function simdGelu(input: Float32Array): Float32Array {
   for (; i + 3 < input.length; i += 4) {
     for (let j = 0; j < 4; j++) {
       const x = input[i + j];
-      const cdf = 0.5 * (1 + Math.tanh(GELU_COEFF_A * (x + GELU_COEFF_B * x * x * x)));
+      const cdf = 0.5 *
+        (1 + Math.tanh(GELU_COEFF_A * (x + GELU_COEFF_B * x * x * x)));
       output[i + j] = x * cdf;
     }
   }
@@ -82,7 +83,8 @@ export function simdGelu(input: Float32Array): Float32Array {
   // Handle remainder
   for (; i < input.length; i++) {
     const x = input[i];
-    const cdf = 0.5 * (1 + Math.tanh(GELU_COEFF_A * (x + GELU_COEFF_B * x * x * x)));
+    const cdf = 0.5 *
+      (1 + Math.tanh(GELU_COEFF_A * (x + GELU_COEFF_B * x * x * x)));
     output[i] = x * cdf;
   }
 
@@ -217,18 +219,18 @@ export function simdMatvec(
  *
  * @returns True if SIMD was successfully enabled
  */
-export async function enableWasmSimd(): Promise<boolean> {
+export function enableWasmSimd(): Promise<boolean> {
   try {
     // Check if running in Deno with WASM support
-    if (typeof Deno === "undefined") return false;
+    if (typeof Deno === "undefined") return Promise.resolve(false);
 
     // In Deno, WASM SIMD is enabled via `--unstable-wasm-simd` flag
     // This function documents the requirement but doesn't need runtime action
     console.log("WASM SIMD: Available and ready for use");
-    return true;
+    return Promise.resolve(true);
   } catch {
     console.warn("WASM SIMD: Not available in this environment");
-    return false;
+    return Promise.resolve(false);
   }
 }
 

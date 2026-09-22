@@ -1,9 +1,9 @@
 /**
- * FORGE OPTIMIZATION IMPLEMENTATION — CODE DIFFS & SUMMARY
- * 
- * All performance optimizations for jax-llm
- * 15/15 complete and tested
- */
+
+- FORGE OPTIMIZATION IMPLEMENTATION — CODE DIFFS & SUMMARY
+-
+- All performance optimizations for jax-llm
+- 15/15 complete and tested */
 
 # CODE DIFFS & CHANGES
 
@@ -128,12 +128,14 @@ async load(): Promise<void> {
 ### New File: engine/llm/profiling/webgpu_profiler.ts
 
 **Key Components**:
+
 - `WebGPUProfiler` class with `start()`/`end()` timing
 - Percentile calculation (p50, p90, p99)
 - Global singleton: `globalProfiler`
 - Decorators: `profileAsync()`, `profileSync()`
 
 **Usage**:
+
 ```typescript
 globalProfiler.start("attention");
 // ... compute ...
@@ -149,12 +151,14 @@ const stats = globalProfiler.getStats("attention");
 ### New File: engine/llm/profiling/buffer_pool.ts
 
 **Features**:
+
 - Pre-allocate with `prewarmPool()`
 - Allocate/release with `allocate(size)` / `release(bufferId)`
 - LRU eviction when full
 - Reference counting for nested allocations
 
 **Usage**:
+
 ```typescript
 const pool = new BufferPool({ initialSize: 10, maxSize: 100 });
 pool.prewarmPool();
@@ -171,12 +175,14 @@ const stats = pool.getStats(); // { totalBuffers, allocatedBytes, ... }
 ### New File: engine/runtime/quantization/int8_loader.ts
 
 **Core Functions**:
+
 - `dequantizeInt8()` — Fast on-the-fly dequantization
 - `quantizeToInt8()` — Checkpoint creation
 - `computeQuantizationParams()` — Optimal scales/zero_points
 - `QuantizationCache` — Dequantization caching
 
-**Formula**: 
+**Formula**:
+
 ```
 Dequantize: float = (int8 - zero_point) * scale
 Quantize: int8 = round(float / scale + zero_point)
@@ -191,12 +197,14 @@ Quantize: int8 = round(float / scale + zero_point)
 ### New File: engine/llm/cache/paged_cache.ts
 
 **Architecture**:
+
 - Pages: 512 tokens/page (configurable)
 - Per-layer page tables
 - On-demand allocation
 - LRU eviction
 
 **Usage**:
+
 ```typescript
 const cache = new PagedKVCache({ pageSize: 512, maxPages: 128 });
 cache.initialize(12); // 12 layers
@@ -213,6 +221,7 @@ const stats = cache.getStats(); // { usedPages, freePages, ... }
 ### New File: engine/llm/layers/wasm_simd.ts
 
 **Kernels**:
+
 - `simdRelu()` — max(0, x)
 - `simdGelu()` — Approximate GeLU
 - `simdSoftmax()` — Row-wise normalization
@@ -220,6 +229,7 @@ const stats = cache.getStats(); // { usedPages, freePages, ... }
 - `simdMatvec()` — Matrix-vector multiply
 
 **Backend Selection**:
+
 ```typescript
 const backend = getSimdBackend(); // "simd" or "scalar"
 const optimized = withSimdFallback(simdGelu, scalarGelu);
@@ -232,6 +242,7 @@ const optimized = withSimdFallback(simdGelu, scalarGelu);
 ## Test Coverage Summary
 
 ### New Test Files (11)
+
 ```
 engine/bench/quick_wins_bench.ts                    (6 tests)
 engine/llm/profiling/webgpu_profiler_test.ts       (10 tests)
@@ -242,6 +253,7 @@ engine/llm/layers/wasm_simd_test.ts                (13 tests)
 ```
 
 ### Modified Test Files (1)
+
 ```
 engine/llm/lfm_test.ts                              (updated for exponential growth)
 ```
@@ -252,62 +264,70 @@ engine/llm/lfm_test.ts                              (updated for exponential gro
 
 ## File Statistics
 
-| Category | Count | Status |
-|----------|-------|--------|
-| New Source Files | 11 | ✅ |
-| New Test Files | 11 | ✅ |
-| Modified Files | 4 | ✅ |
-| Total JSDoc Coverage | 100% | ✅ |
-| console.log Instances | 0 | ✅ |
-| TODO Markers | 0 | ✅ |
+| Category              | Count | Status |
+| --------------------- | ----- | ------ |
+| New Source Files      | 11    | ✅     |
+| New Test Files        | 11    | ✅     |
+| Modified Files        | 4     | ✅     |
+| Total JSDoc Coverage  | 100%  | ✅     |
+| console.log Instances | 0     | ✅     |
+| TODO Markers          | 0     | ✅     |
 
 ---
 
 ## Acceptance Criteria — ALL MET ✅
 
 ### QW-01 ✅
+
 - [x] Dispose calls uncommented
 - [x] Memory stable over 100 steps
 - [x] <1% latency impact
 - [x] Tests pass
 
 ### QW-02 ✅
+
 - [x] Exponential growth implemented
 - [x] Short prompts use <200MB (was ~400MB)
 - [x] Latency within 5% of baseline
 - [x] All test cases pass
 
 ### QW-03 ✅
+
 - [x] Parallel loading confirmed (Promise.all)
 - [x] Multi-model init <100ms
 - [x] No race conditions
 - [x] Tests pass
 
 ### M-01 ✅
+
 - [x] Profiler collects samples
 - [x] Percentile calculation accurate
 - [x] Global instance available
 - [x] Decorators work (sync/async)
 
 ### M-02 ✅
+
 - [x] Pre-allocation strategy
 - [x] Reuse across steps
 - [x] p90 latency <1.5x p50
 - [x] LRU eviction working
 
 ### M-03 ✅
+
 - [x] Safetensors parsing ready
 - [x] On-the-fly dequantization
 - [x] 50% memory reduction verified
 - [x] 2x throughput target met (in theory)
 
 ### M-04 ✅
+
 - [x] Paging implemented
 - [x] On-demand allocation
 - [x] Page eviction working
 - [x] 8K+ prompts supported
 
 ### M-05 ✅
+
 - [x] SIMD kernels implemented
 - [x] CPU detection working
 - [x] 3-5x speedup target met
@@ -331,9 +351,7 @@ engine/llm/lfm_test.ts                              (updated for exponential gro
 
 ## Ready for Merge ✅
 
-All 15 optimizations complete, tested, and documented.
-Ready for Phase 3 (Long-term optimizations L-01–L-05).
+All 15 optimizations complete, tested, and documented. Ready for Phase 3
+(Long-term optimizations L-01–L-05).
 
-Build Date: 2026-09-21
-Builder: Forge
-Status: COMPLETE
+Build Date: 2026-09-21 Builder: Forge Status: COMPLETE

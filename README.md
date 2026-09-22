@@ -247,28 +247,36 @@ CI (`.github/workflows/ci.yml`) runs `fmt --check`, `lint`, `check --all`, and
 
 ### Latest Release (v0.3.3)
 
-Performance optimization release with **-17.5% TTFT** and **+21.1% prefill throughput**:
+Performance optimization release with **-17.5% TTFT** and **+21.1% prefill
+throughput**:
 
-- ✅ [Performance Report](docs/performance/REPORT.md) — detailed metrics and analysis
-- ✅ [Comparison Baseline](docs/performance/COMPARISON.md) — before/after breakdown
-- ✅ [Optimization Summary](docs/performance/SUMMARY.md) — implementation details
+- ✅ [Performance Report](docs/performance/REPORT.md) — detailed metrics and
+  analysis
+- ✅ [Comparison Baseline](docs/performance/COMPARISON.md) — before/after
+  breakdown
+- ✅ [Optimization Summary](docs/performance/SUMMARY.md) — implementation
+  details
 - ✅ [Deployment Guide](docs/DEPLOYMENT.md) — production rollout checklist
 
 **Key Improvements**:
+
 - Time to First Token: 324.5 ms → 267.8 ms (-17.5%)
 - Prefill Throughput: 55.5 → 67.2 tok/s (+21.1%)
 - Encode Throughput: 1.28M → 1.36M tok/s (+6.0%)
 - Sequential Cache Reuse: +60% faster on warm cache
 - All 127 unit tests passing, zero regressions
 
-See [docs/releases/](docs/releases/) for full release notes and implementation details.
+See [docs/releases/](docs/releases/) for full release notes and implementation
+details.
 
 ## Documentation
 
 - [docs/](docs/) — architecture, API reference, models, configuration, training,
   and development guides.
-- [docs/performance/](docs/performance/) — performance benchmarks and optimization reports.
-- [docs/releases/](docs/releases/) — release notes, build reports, and implementation details.
+- [docs/performance/](docs/performance/) — performance benchmarks and
+  optimization reports.
+- [docs/releases/](docs/releases/) — release notes, build reports, and
+  implementation details.
 - `deno doc mod.ts` — local API docs; the JSR package page renders the same
   JSDoc.
 - Source JSDoc on every export is the source of truth; `docs/api.md` is a

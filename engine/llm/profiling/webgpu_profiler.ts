@@ -94,7 +94,8 @@ export class WebGPUProfiler {
     };
 
     // Compute standard deviation
-    const variance = sorted.reduce((sum, x) => sum + Math.pow(x - meanMs, 2), 0) / count;
+    const variance =
+      sorted.reduce((sum, x) => sum + Math.pow(x - meanMs, 2), 0) / count;
     const stddevMs = Math.sqrt(variance);
 
     return {
@@ -138,11 +139,17 @@ export class WebGPUProfiler {
    */
   static formatStats(stats: Map<string, ProfilerStats>): string {
     const rows: string[] = [];
-    rows.push("Operation\t\tCount\tMean(ms)\tP50(ms)\tP90(ms)\tP99(ms)\tStdDev(ms)");
+    rows.push(
+      "Operation\t\tCount\tMean(ms)\tP50(ms)\tP90(ms)\tP99(ms)\tStdDev(ms)",
+    );
     rows.push("─".repeat(100));
     for (const [label, stat] of stats) {
       rows.push(
-        `${label.padEnd(20)}\t${stat.count}\t${stat.meanMs.toFixed(2)}\t${stat.p50Ms.toFixed(2)}\t${stat.p90Ms.toFixed(2)}\t${stat.p99Ms.toFixed(2)}\t${stat.stddevMs.toFixed(2)}`,
+        `${label.padEnd(20)}\t${stat.count}\t${stat.meanMs.toFixed(2)}\t${
+          stat.p50Ms.toFixed(2)
+        }\t${stat.p90Ms.toFixed(2)}\t${stat.p99Ms.toFixed(2)}\t${
+          stat.stddevMs.toFixed(2)
+        }`,
       );
     }
     return rows.join("\n");

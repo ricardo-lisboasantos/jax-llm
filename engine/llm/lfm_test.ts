@@ -3,7 +3,7 @@
  */
 import { assert, assertEquals } from "@std/assert";
 import { LFM_CONFIG } from "./configs/lfm_config.ts";
-import { CACHE_GROWTH_STEPS, KV_CACHE_BLOCK_SIZE, roundCacheCapacity } from "./cache/lfm_cache.ts";
+import { roundCacheCapacity } from "./cache/lfm_cache.ts";
 
 Deno.test("unit: lfm config values", () => {
   assert(LFM_CONFIG.vocabSize > 0);

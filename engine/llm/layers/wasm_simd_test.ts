@@ -1,15 +1,15 @@
 /**
  * unit: WASM SIMD kernel tests
  */
-import { assertEquals, assert, assertAlmostEquals } from "@std/assert";
+import { assert, assertAlmostEquals, assertEquals } from "@std/assert";
 import {
+  getSimdBackend,
   isWasmSimdAvailable,
-  simdRelu,
   simdGelu,
-  simdSoftmax,
   simdLayernorm,
   simdMatvec,
-  getSimdBackend,
+  simdRelu,
+  simdSoftmax,
 } from "./wasm_simd.ts";
 
 Deno.test("unit: WASM SIMD availability check", () => {

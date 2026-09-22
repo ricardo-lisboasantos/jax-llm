@@ -11,9 +11,12 @@
  */
 
 import { assertEquals } from "@std/assert";
-import { CACHE_GROWTH_STEPS, roundCacheCapacity } from "../llm/cache/lfm_cache.ts";
+import {
+  CACHE_GROWTH_STEPS,
+  roundCacheCapacity,
+} from "../llm/cache/lfm_cache.ts";
 import { createLfmState, ensureStateCapacity } from "../llm/state/lfm_state.ts";
-import { numpy as np } from "npm:@jax-js/jax@^0.1.25";
+import type { numpy as _np } from "npm:@jax-js/jax@^0.1.25";
 
 /**
  * unit test: QW-02 Dynamic cache sizing reduces memory for short prompts.
@@ -40,7 +43,9 @@ Deno.test("unit: QW-02 dynamic cache sizing efficiency", () => {
     );
     const actualEfficiency = (tc.promptLen / alloc) * 100;
     console.log(
-      `  Prompt ${tc.promptLen}t: allocate ${alloc}t (${actualEfficiency.toFixed(1)}% efficient)`,
+      `  Prompt ${tc.promptLen}t: allocate ${alloc}t (${
+        actualEfficiency.toFixed(1)
+      }% efficient)`,
     );
   }
 });
@@ -72,7 +77,11 @@ Deno.test("unit: QW-01 cache disposal on resize", () => {
 
   // Ensure at least one attention cache exists
   const hasAttentionCache = state.caches.some((c) => c.kind === "attention");
-  assertEquals(hasAttentionCache, true, "State should have at least one attention cache");
+  assertEquals(
+    hasAttentionCache,
+    true,
+    "State should have at least one attention cache",
+  );
 
   // Resize to larger capacity (simulating growing prompt)
   ensureStateCapacity(state, 300);
@@ -164,7 +173,19 @@ Deno.test("bench: QW-01 memory stability over steps", () => {
  * Quick validation that the exponential growth series covers the expected range.
  */
 Deno.test("unit: QW-02 cache sizing covers typical prompt sizes", () => {
-  const typicalPromptSizes = [1, 8, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192];
+  const typicalPromptSizes = [
+    1,
+    8,
+    32,
+    64,
+    128,
+    256,
+    512,
+    1024,
+    2048,
+    4096,
+    8192,
+  ];
   for (const size of typicalPromptSizes) {
     const alloc = roundCacheCapacity(size);
     assertEquals(

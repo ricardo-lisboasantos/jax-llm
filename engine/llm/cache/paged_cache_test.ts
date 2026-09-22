@@ -1,8 +1,8 @@
 /**
  * unit: Paged KV cache tests
  */
-import { assertEquals, assert } from "@std/assert";
-import { PagedKVCache, PAGE_SIZE } from "./paged_cache.ts";
+import { assert, assertEquals } from "@std/assert";
+import { PagedKVCache } from "./paged_cache.ts";
 
 Deno.test("unit: PagedKVCache initializes with correct structure", () => {
   const cache = new PagedKVCache({ pageSize: 512, maxPages: 10 });
@@ -27,7 +27,10 @@ Deno.test("unit: PagedKVCache allocates pages on demand", () => {
   assertEquals(stats.usedPages, 1);
 
   // Allocate page for token within same page
-  const { pageIdx: page1, offset: offset1 } = cache.allocatePageForToken(0, 256);
+  const { pageIdx: page1, offset: offset1 } = cache.allocatePageForToken(
+    0,
+    256,
+  );
   assertEquals(page1, 0);
   assertEquals(offset1, 256);
 
@@ -36,7 +39,10 @@ Deno.test("unit: PagedKVCache allocates pages on demand", () => {
   assertEquals(stats2.usedPages, 1);
 
   // Allocate page for token beyond first page
-  const { pageIdx: page2, offset: offset2 } = cache.allocatePageForToken(0, 512);
+  const { pageIdx: page2, offset: offset2 } = cache.allocatePageForToken(
+    0,
+    512,
+  );
   assertEquals(page2, 1);
   assertEquals(offset2, 0);
 

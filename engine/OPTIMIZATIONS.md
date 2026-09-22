@@ -1,26 +1,33 @@
 /**
- * @file engine/OPTIMIZATIONS.md
- * Performance optimization implementation summary for jax-llm
- */
+
+- @file engine/OPTIMIZATIONS.md
+- Performance optimization implementation summary for jax-llm */
 
 # JAX-LLM Performance Optimizations
 
-Comprehensive implementation of 15 optimization tasks across 3 phases (Quick Wins, Medium-term, Long-term). This document tracks completion status, impact metrics, and integration guidelines.
+Comprehensive implementation of 15 optimization tasks across 3 phases (Quick
+Wins, Medium-term, Long-term). This document tracks completion status, impact
+metrics, and integration guidelines.
 
 ## ✅ Phase 1: Quick Wins (COMPLETE)
 
 ### QW-01: Fix LFM Cache Disposal Memory Leak
-**Status**: ✅ DONE  
-**File**: `engine/llm/lfm.ts`  
-**Change**: Uncommented `.dispose()` calls at lines 114-115 and 126  
 
-**Problem**: Cache tensors were not freed after each decode step, causing memory to accumulate.  
-**Solution**: Restore proper cleanup with `oldCache.key.dispose()` and `oldCache.value.dispose()`.
+**Status**: ✅ DONE\
+**File**: `engine/llm/lfm.ts`\
+**Change**: Uncommented `.dispose()` calls at lines 114-115 and 126
+
+**Problem**: Cache tensors were not freed after each decode step, causing memory
+to accumulate.\
+**Solution**: Restore proper cleanup with `oldCache.key.dispose()` and
+`oldCache.value.dispose()`.
 
 **Impact**:
+
 - Memory footprint: Stable over 100 inference steps (no accumulation)
 - Latency: No measurable overhead (<1% regression)
-- Tested by: `engine/bench/quick_wins_bench.ts::bench: QW-01 memory stability over steps`
+- Tested by:
+  `engine/bench/quick_wins_bench.ts::bench: QW-01 memory stability over steps`
 
 ```typescript
 // Before (lines 114-115): Memory leaked
@@ -35,25 +42,30 @@ oldCache.value.dispose();
 ---
 
 ### QW-02: Dynamic KV Cache Sizing (Exponential Growth)
-**Status**: ✅ DONE  
-**Files**: 
+
+**Status**: ✅ DONE\
+**Files**:
+
 - `engine/llm/cache/lfm_cache.ts` (sizing algorithm)
 - `engine/llm/state/lfm_state.ts` (allocation + disposal during resize)
 
-**Problem**: Fixed 512-token blocks wasted 94% memory on short prompts (10-token → 512-token allocation).  
+**Problem**: Fixed 512-token blocks wasted 94% memory on short prompts (10-token
+→ 512-token allocation).\
 **Solution**: Exponential growth curve: 128 → 256 → 512 → 1024 → 2048 → 4096.
 
 **Allocation Efficiency**:
+
 | Prompt Length | Old Block | New Block | Old Memory | New Memory | Savings |
-|---|---|---|---|---|---|
-| 10 tokens | 512 | 128 | 2.0MB | 0.5MB | 75% ↓ |
-| 64 tokens | 512 | 128 | 2.0MB | 0.5MB | 75% ↓ |
-| 128 tokens | 512 | 128 | 2.0MB | 0.5MB | 75% ↓ |
-| 256 tokens | 512 | 256 | 2.0MB | 1.0MB | 50% ↓ |
-| 512 tokens | 512 | 512 | 2.0MB | 2.0MB | — |
-| 1024 tokens | 1024 | 1024 | 4.0MB | 4.0MB | — |
+| ------------- | --------- | --------- | ---------- | ---------- | ------- |
+| 10 tokens     | 512       | 128       | 2.0MB      | 0.5MB      | 75% ↓   |
+| 64 tokens     | 512       | 128       | 2.0MB      | 0.5MB      | 75% ↓   |
+| 128 tokens    | 512       | 128       | 2.0MB      | 0.5MB      | 75% ↓   |
+| 256 tokens    | 512       | 256       | 2.0MB      | 1.0MB      | 50% ↓   |
+| 512 tokens    | 512       | 512       | 2.0MB      | 2.0MB      | —       |
+| 1024 tokens   | 1024      | 1024      | 4.0MB      | 4.0MB      | —       |
 
 **Implementation**:
+
 ```typescript
 export const CACHE_GROWTH_STEPS = [128, 256, 512, 1024, 2048, 4096];
 
@@ -66,6 +78,7 @@ export function roundCacheCapacity(requiredCapacity: number): number {
 ```
 
 **Memory Disposal During Resize**:
+
 ```typescript
 export function ensureStateCapacity(state: LfmState, requiredCapacity: number) {
   if (state.capacity >= requiredCapacity) return;
@@ -77,7 +90,7 @@ export function ensureStateCapacity(state: LfmState, requiredCapacity: number) {
     const oldValue = cache.value;
     cache.key = np.pad(oldKey, { 0: [0, newCapacity - oldCapacity] });
     cache.value = np.pad(oldValue, { 0: [0, newCapacity - oldCapacity] });
-    oldKey.dispose();  // Dispose old arrays
+    oldKey.dispose(); // Dispose old arrays
     oldValue.dispose();
   }
   state.capacity = newCapacity;
@@ -85,16 +98,20 @@ export function ensureStateCapacity(state: LfmState, requiredCapacity: number) {
 ```
 
 **Tests**: `engine/llm/lfm_test.ts`
+
 - `unit: lfm roundCacheCapacity uses exponential growth`
-- Verified allocation sizes for 1, 64, 128, 129, 256, 257, 512, 513, 1024, 2048, 4097 tokens
+- Verified allocation sizes for 1, 64, 128, 129, 256, 257, 512, 513, 1024, 2048,
+  4097 tokens
 
 ---
 
 ### QW-03: Parallel Tokenizer + Weights Loading
-**Status**: ✅ ALREADY OPTIMIZED  
+
+**Status**: ✅ ALREADY OPTIMIZED\
 **File**: `engine/runtime/runtime.ts` (lines 67-70)
 
 **Current Implementation** (already parallel):
+
 ```typescript
 async load(): Promise<void> {
   await this.initDevice();
@@ -106,6 +123,7 @@ async load(): Promise<void> {
 ```
 
 **Impact**:
+
 - Sequential baseline: ~950ms (tokenizer 150ms + weights 800ms)
 - Parallel result: ~800ms (max of tokenizer and weights)
 - Speedup: **1.19x**
@@ -115,12 +133,15 @@ async load(): Promise<void> {
 ## ✅ Phase 2: Medium-Term Optimizations (COMPLETE)
 
 ### M-01: WebGPU Profiling Instrumentation
-**Status**: ✅ DONE  
+
+**Status**: ✅ DONE\
 **File**: `engine/llm/profiling/webgpu_profiler.ts`
 
-**Goal**: Measure per-kernel latency distribution (p50/p90/p99) to identify variance sources.
+**Goal**: Measure per-kernel latency distribution (p50/p90/p99) to identify
+variance sources.
 
 **Features**:
+
 - `start(label)` / `end(label)` timing hooks
 - Automatic percentile calculation (p50, p90, p99)
 - Standard deviation tracking for jitter detection
@@ -128,6 +149,7 @@ async load(): Promise<void> {
 - Decorator wrappers for async/sync functions
 
 **Usage**:
+
 ```typescript
 const profiler = new WebGPUProfiler();
 
@@ -140,6 +162,7 @@ console.log(`p50=${stats.p50Ms}ms, p90=${stats.p90Ms}ms, p99=${stats.p99Ms}ms`);
 ```
 
 **Tests**: `engine/llm/profiling/webgpu_profiler_test.ts`
+
 - Sample collection and percentile calculation
 - Decorator wrappers (sync/async)
 - Format output for reporting
@@ -147,33 +170,39 @@ console.log(`p50=${stats.p50Ms}ms, p90=${stats.p90Ms}ms, p99=${stats.p99Ms}ms`);
 ---
 
 ### M-02: WebGPU Buffer Pool
-**Status**: ✅ DONE  
+
+**Status**: ✅ DONE\
 **File**: `engine/llm/profiling/buffer_pool.ts`
 
-**Goal**: Reduce p90 latency by pre-allocating persistent GPU buffers instead of alloc/dealloc per step.
+**Goal**: Reduce p90 latency by pre-allocating persistent GPU buffers instead of
+alloc/dealloc per step.
 
 **Architecture**:
+
 - Pre-warmable pool with configurable size
 - LRU eviction when pool is full
 - Reference counting for nested allocations
 - Aggressive cleanup mode for tight memory
 
 **Configuration**:
+
 ```typescript
 interface BufferPoolConfig {
-  initialSize?: 10;           // Buffers to pre-allocate
-  maxSize?: 100;              // Hard limit on pool size
-  defaultBufferSize?: 8192;   // Default buffer bytes
-  aggressiveCleanup?: false;  // LRU eviction on full
+  initialSize?: 10; // Buffers to pre-allocate
+  maxSize?: 100; // Hard limit on pool size
+  defaultBufferSize?: 8192; // Default buffer bytes
+  aggressiveCleanup?: false; // LRU eviction on full
 }
 ```
 
 **Typical Benefits**:
+
 - p90 latency: Reduced from 8ms → 6ms (25% improvement)
 - Allocation jitter eliminated
 - Steady-state allocation pattern
 
 **Tests**: `engine/llm/profiling/buffer_pool_test.ts`
+
 - Pool initialization and warmup
 - Allocation/release cycle
 - Buffer reuse verification
@@ -184,32 +213,38 @@ interface BufferPoolConfig {
 ---
 
 ### M-03: INT8 Quantization Loader
-**Status**: ✅ DONE  
+
+**Status**: ✅ DONE\
 **File**: `engine/runtime/quantization/int8_loader.ts`
 
-**Goal**: 50% memory reduction (float32 → int8) + on-the-fly dequantization with <5% latency overhead.
+**Goal**: 50% memory reduction (float32 → int8) + on-the-fly dequantization with
+<5% latency overhead.
 
 **Format**:
+
 ```
 Quantization: int8_value = round((float_value - zero_point) / scale)
 Dequantization: float_value = (int8_value - zero_point) * scale
 ```
 
 **Functions**:
+
 - `dequantizeInt8(quantized, scales, zeroPoints, shape)` — Fast dequantization
 - `quantizeToInt8(data, scales, zeroPoints)` — Checkpoint creation
 - `computeQuantizationParams(data, numChannels)` — Optimal param computation
 - `QuantizationCache` — On-demand dequantization with caching
 
 **Memory Impact** (per weight layer):
-| Layer | float32 | float16 | int8 | Savings |
-|---|---|---|---|---|
-| Linear 768×768 | 2.3MB | 1.2MB | 0.6MB | 74% vs FP32 |
-| Embedding 32K×768 | 98MB | 49MB | 24.5MB | 75% vs FP32 |
+
+| Layer             | float32 | float16 | int8   | Savings     |
+| ----------------- | ------- | ------- | ------ | ----------- |
+| Linear 768×768    | 2.3MB   | 1.2MB   | 0.6MB  | 74% vs FP32 |
+| Embedding 32K×768 | 98MB    | 49MB    | 24.5MB | 75% vs FP32 |
 
 **Dequantization Overhead**: <3% latency (cached results)
 
 **Tests**: `engine/runtime/quantization/int8_loader_test.ts`
+
 - Dequantization math verification
 - Per-channel scaling
 - Roundtrip accuracy
@@ -219,36 +254,42 @@ Dequantization: float_value = (int8_value - zero_point) * scale
 ---
 
 ### M-04: KV Cache Paging
-**Status**: ✅ DONE  
+
+**Status**: ✅ DONE\
 **File**: `engine/llm/cache/paged_cache.ts`
 
-**Goal**: Support 8K+ prompts with efficient memory management and page eviction.
+**Goal**: Support 8K+ prompts with efficient memory management and page
+eviction.
 
 **Architecture**:
+
 - Fixed-size pages (default: 512 tokens/page)
 - On-demand allocation (avoids pre-allocating for max sequence)
 - LRU eviction when pool is full
 - Per-layer page tables
 
 **Efficiency Comparison**:
-| Sequence | Monolithic | Paged | Savings |
-|---|---|---|---|
-| 1K tokens | 4MB | 2MB | 50% |
-| 8K tokens | 32MB | 8MB | 75% |
-| 32K tokens | 128MB | 32MB | 75% |
+
+| Sequence   | Monolithic | Paged | Savings |
+| ---------- | ---------- | ----- | ------- |
+| 1K tokens  | 4MB        | 2MB   | 50%     |
+| 8K tokens  | 32MB       | 8MB   | 75%     |
+| 32K tokens | 128MB      | 32MB  | 75%     |
 
 **Configuration**:
+
 ```typescript
 const cache = new PagedKVCache({
-  pageSize: 512,      // Tokens per page
-  maxPages: 128,      // Max pages
-  headDim: 64,        // Attention head dimension
-  numKvHeads: 8,      // KV heads per layer
+  pageSize: 512, // Tokens per page
+  maxPages: 128, // Max pages
+  headDim: 64, // Attention head dimension
+  numKvHeads: 8, // KV heads per layer
 });
 cache.initialize(12); // Number of layers
 ```
 
 **Tests**: `engine/llm/cache/paged_cache_test.ts`
+
 - Page allocation on-demand
 - Multi-layer tracking
 - LRU eviction under pressure
@@ -258,12 +299,14 @@ cache.initialize(12); // Number of layers
 ---
 
 ### M-05: WASM SIMD Activation
-**Status**: ✅ DONE  
+
+**Status**: ✅ DONE\
 **File**: `engine/llm/layers/wasm_simd.ts`
 
 **Goal**: 3-5x CPU speedup via SIMD128 when WebGPU unavailable.
 
 **Kernels Implemented**:
+
 1. **simdRelu** — max(0, x), 4 values parallel
 2. **simdGelu** — Approximate with tanh variant
 3. **simdSoftmax** — Numerically stable row normalization
@@ -271,11 +314,13 @@ cache.initialize(12); // Number of layers
 5. **simdMatvec** — Matrix-vector multiplication
 
 **Performance**:
+
 - Scalar baseline: 100k ops/sec
 - SIMD target: 300-500k ops/sec (**3-5x**)
 - Requires: `--unstable-wasm-simd` Deno flag
 
 **Enable at Runtime**:
+
 ```typescript
 const enabled = await enableWasmSimd();
 if (enabled) {
@@ -284,6 +329,7 @@ if (enabled) {
 ```
 
 **Backend Selection**:
+
 ```typescript
 // Automatic fallback
 const backend = getSimdBackend(); // "simd" or "scalar"
@@ -293,6 +339,7 @@ const optimizedGelu = withSimdFallback(simdGelu, scalarGelu);
 ```
 
 **Tests**: `engine/llm/layers/wasm_simd_test.ts`
+
 - ReLU correctness (positive/negative)
 - GeLU smoothness and monotonicity
 - Softmax normalization (sums to 1)
@@ -304,6 +351,7 @@ const optimizedGelu = withSimdFallback(simdGelu, scalarGelu);
 ## 📊 Integration & Deployment
 
 ### Compilation & Testing
+
 ```bash
 # Unit tests for all optimizations
 deno task test:unit
@@ -316,12 +364,14 @@ deno task typecheck
 ```
 
 ### Memory Profiling
+
 ```bash
 # Track cache sizes over inference
 deno task test:bench -- --filter "QW-01.*memory"
 ```
 
 ### Benchmark Baseline Update
+
 See `PERFORMANCE_BASELINE.md` for before/after metrics.
 
 ---
@@ -341,6 +391,7 @@ Phase 3 optimizations are staged for implementation after M-01–M-05 gate passe
 ## 📝 Files Changed
 
 ### New Files Created
+
 - `engine/bench/quick_wins_bench.ts` — QW benchmarks
 - `engine/llm/profiling/webgpu_profiler.ts` — M-01 profiler
 - `engine/llm/profiling/webgpu_profiler_test.ts` — M-01 tests
@@ -354,6 +405,7 @@ Phase 3 optimizations are staged for implementation after M-01–M-05 gate passe
 - `engine/llm/layers/wasm_simd_test.ts` — M-05 tests
 
 ### Modified Files
+
 - `engine/llm/lfm.ts` — QW-01 uncommented dispose
 - `engine/llm/cache/lfm_cache.ts` — QW-02 exponential sizing
 - `engine/llm/state/lfm_state.ts` — QW-02 disposal on resize
@@ -377,5 +429,5 @@ Phase 3 optimizations are staged for implementation after M-01–M-05 gate passe
 
 ---
 
-Generated: 2026-09-21  
+Generated: 2026-09-21\
 Forge Builder — Performance Optimizations Complete

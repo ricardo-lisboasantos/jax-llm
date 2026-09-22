@@ -101,39 +101,39 @@ export function runLfmStep(
         throw new Error("Invalid attention cache");
       }
       const oldCache = { key: cache.key, value: cache.value };
-       const [nextX, nextCache] = runAttentionLayerStep(
-         model.layers[i] as LfmAttentionLayer,
-         oldCache,
-         x,
-         position,
-         slot,
-         validLength,
-       );
-       x = nextX;
-       state.caches[i] = { kind: "attention", ...nextCache };
-       // Workaround: jax-js has refcount bug on long sequences; silently ignore UseAfterFreeError
-       try {
-         oldCache.key.dispose();
-         oldCache.value.dispose();
-       } catch (_e) {
-         // Upstream jax-js refcount issue: ignore
-       }
+      const [nextX, nextCache] = runAttentionLayerStep(
+        model.layers[i] as LfmAttentionLayer,
+        oldCache,
+        x,
+        position,
+        slot,
+        validLength,
+      );
+      x = nextX;
+      state.caches[i] = { kind: "attention", ...nextCache };
+      // Workaround: jax-js has refcount bug on long sequences; silently ignore UseAfterFreeError
+      try {
+        oldCache.key.dispose();
+        oldCache.value.dispose();
+      } catch (_e) {
+        // Upstream jax-js refcount issue: ignore
+      }
     } else {
       if (cache.kind !== "conv") throw new Error("Invalid convolution cache");
-       const oldCacheValue = cache.value;
-       const [nextX, nextCache] = runConvLayerStep(
-         model.layers[i] as LfmConvLayer,
-         oldCacheValue,
-         x,
-       );
-        x = nextX;
-        state.caches[i] = { kind: "conv", value: nextCache };
-        // Workaround: jax-js has refcount bug on long sequences; silently ignore UseAfterFreeError
-        try {
-          oldCacheValue.dispose();
-        } catch (_e) {
-          // Upstream jax-js refcount issue: ignore
-        }
+      const oldCacheValue = cache.value;
+      const [nextX, nextCache] = runConvLayerStep(
+        model.layers[i] as LfmConvLayer,
+        oldCacheValue,
+        x,
+      );
+      x = nextX;
+      state.caches[i] = { kind: "conv", value: nextCache };
+      // Workaround: jax-js has refcount bug on long sequences; silently ignore UseAfterFreeError
+      try {
+        oldCacheValue.dispose();
+      } catch (_e) {
+        // Upstream jax-js refcount issue: ignore
+      }
     }
   }
 

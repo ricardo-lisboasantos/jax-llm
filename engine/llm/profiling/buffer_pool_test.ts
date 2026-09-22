@@ -1,7 +1,7 @@
 /**
  * unit: WebGPU buffer pool tests
  */
-import { assertEquals, assert, assertThrows } from "@std/assert";
+import { assert, assertEquals, assertThrows } from "@std/assert";
 import { BufferPool } from "./buffer_pool.ts";
 
 Deno.test("unit: BufferPool creates initial buffers on prewarm", () => {
@@ -47,7 +47,7 @@ Deno.test("unit: BufferPool reuses free buffers", () => {
   pool.release(buf1);
 
   // Allocate again (should reuse the same buffer)
-  const buf2 = pool.allocate(512);
+  const _buf2 = pool.allocate(512);
   const stats2 = pool.getStats();
   const poolSize2 = stats2.totalBuffers;
 
@@ -56,7 +56,11 @@ Deno.test("unit: BufferPool reuses free buffers", () => {
 });
 
 Deno.test("unit: BufferPool creates new buffer if needed", () => {
-  const pool = new BufferPool({ initialSize: 1, maxSize: 5, defaultBufferSize: 1024 });
+  const pool = new BufferPool({
+    initialSize: 1,
+    maxSize: 5,
+    defaultBufferSize: 1024,
+  });
   pool.prewarmPool();
 
   // Allocate multiple buffers (should create new ones as needed)
@@ -74,7 +78,11 @@ Deno.test("unit: BufferPool creates new buffer if needed", () => {
 });
 
 Deno.test("unit: BufferPool throws when exceeding maxSize", () => {
-  const pool = new BufferPool({ initialSize: 1, maxSize: 2, defaultBufferSize: 1024 });
+  const pool = new BufferPool({
+    initialSize: 1,
+    maxSize: 2,
+    defaultBufferSize: 1024,
+  });
   pool.prewarmPool();
 
   // Allocate initial buffer + 1 more = pool is full
@@ -164,7 +172,7 @@ Deno.test("unit: BufferPool gets stats accurately", () => {
   assertEquals(stats.freeBytes, 4096);
 
   const buf1 = pool.allocate(1024);
-  const buf2 = pool.allocate(1024);
+  const _buf2 = pool.allocate(1024);
   pool.release(buf1);
 
   stats = pool.getStats();

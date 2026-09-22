@@ -19,7 +19,7 @@
  *  - Supports up to 1M tokens (theoretical) with same page pool
  */
 
-import type { numpy as np } from "npm:@jax-js/jax@^0.1.25";
+import type { numpy as _np } from "npm:@jax-js/jax@^0.1.25";
 
 export const PAGE_SIZE = 512; // Tokens per page
 export const DEFAULT_MAX_PAGES = 128; // Max pages in cache
@@ -100,7 +100,10 @@ export class PagedKVCache {
    * @param tokenPosition Absolute token position
    * @returns Page index and offset within page
    */
-  allocatePageForToken(layerIdx: number, tokenPosition: number): { pageIdx: number; offset: number } {
+  allocatePageForToken(
+    layerIdx: number,
+    tokenPosition: number,
+  ): { pageIdx: number; offset: number } {
     const pageIdx = Math.floor(tokenPosition / this.config.pageSize);
     const offset = tokenPosition % this.config.pageSize;
 
@@ -114,7 +117,10 @@ export class PagedKVCache {
 
       // Create new page (simplified: just a marker)
       const newPageId = this.nextPageId++;
-      pages.set(pageIdx, new Float32Array(this.config.pageSize * this.config.headDim));
+      pages.set(
+        pageIdx,
+        new Float32Array(this.config.pageSize * this.config.headDim),
+      );
       this.allocatedPages.add(newPageId);
       this.pageAccessOrder.push(newPageId);
 
@@ -144,7 +150,11 @@ export class PagedKVCache {
    * @param isKey True for key cache, false for value cache
    * @returns Cache array or null if page not allocated
    */
-  getPage(layerIdx: number, pageIdx: number, isKey: boolean): ArrayLike<number> | null {
+  getPage(
+    layerIdx: number,
+    pageIdx: number,
+    isKey: boolean,
+  ): ArrayLike<number> | null {
     const cache = isKey ? this.keyPages[layerIdx] : this.valuePages[layerIdx];
     return cache.get(pageIdx) ?? null;
   }
@@ -188,7 +198,8 @@ export class PagedKVCache {
    */
   getStats(): PagedKVCacheStats {
     const usedPages = this.allocatedPages.size;
-    const totalPageMemory = usedPages * this.config.pageSize * this.config.headDim * 2; // key + value
+    const totalPageMemory = usedPages * this.config.pageSize *
+      this.config.headDim * 2; // key + value
     const bytes = totalPageMemory * (this.config.dtype === "float16" ? 2 : 4);
 
     return {

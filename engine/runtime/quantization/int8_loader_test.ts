@@ -1,12 +1,12 @@
 /**
  * unit: INT8 quantization loader tests
  */
-import { assertEquals, assert, assertAlmostEquals } from "@std/assert";
+import { assert, assertAlmostEquals, assertEquals } from "@std/assert";
 import {
-  dequantizeInt8,
-  quantizeToInt8,
   computeQuantizationParams,
+  dequantizeInt8,
   QuantizationCache,
+  quantizeToInt8,
 } from "./int8_loader.ts";
 
 Deno.test("unit: INT8 dequantization math", () => {
@@ -103,7 +103,10 @@ Deno.test("unit: computeQuantizationParams multi-channel", () => {
   assertEquals(params.zeroPoints.length, 2);
 
   // First channel has smaller range, should have smaller scale
-  assert(params.scales[0] < params.scales[1], "First channel should have smaller scale");
+  assert(
+    params.scales[0] < params.scales[1],
+    "First channel should have smaller scale",
+  );
 });
 
 Deno.test("unit: QuantizationCache stores and retrieves weights", () => {

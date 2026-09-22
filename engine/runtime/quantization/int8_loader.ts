@@ -23,7 +23,7 @@
  *  - <5% latency overhead from dequantization
  */
 
-import type { numpy as np } from "npm:@jax-js/jax@^0.1.25";
+import type { numpy as _np } from "npm:@jax-js/jax@^0.1.25";
 
 export interface QuantizationMetadata {
   /** Quantization bit depth (8, 4, 2, etc.). */
@@ -62,7 +62,7 @@ export function dequantizeInt8(
   quantized: Int8Array,
   scales: number[],
   zeroPoints: number[],
-  shape: number[],
+  _shape: number[],
 ): Float32Array {
   const result = new Float32Array(quantized.length);
 
@@ -166,8 +166,8 @@ export class Int8QuantizationLoader {
    * @returns Quantized weight object, or null if not quantized
    */
   static parseQuantizedWeight(
-    checkpointData: Uint8Array,
-    weightName: string,
+    _checkpointData: Uint8Array,
+    _weightName: string,
   ): QuantizedWeight | null {
     // This is a simplified parser. In practice, you'd use a safetensors library.
     // For now, assume the checkpoint includes metadata indicating quantization.
@@ -259,7 +259,11 @@ export class QuantizationCache {
       totalBytes += dequantized.byteLength;
     }
 
-    return { quantized: quantizedCount, dequantized: dequantizedCount, totalBytes };
+    return {
+      quantized: quantizedCount,
+      dequantized: dequantizedCount,
+      totalBytes,
+    };
   }
 }
 

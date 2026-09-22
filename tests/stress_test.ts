@@ -2,7 +2,7 @@
  * Long-context stress test for JAX-LLM optimizations.
  * Tests cache reuse, buffer pooling, and dynamic KV cache sizing.
  */
-import { assertEquals, assert } from "@std/assert";
+import { assertEquals } from "@std/assert";
 import { ChatEngine } from "../mod.ts";
 
 async function hasNetwork(): Promise<boolean> {
@@ -52,7 +52,7 @@ Deno.test("stress: buffer pool stress (rapid allocation/release)", async () => {
     if (i % 20 === 0) {
       const stats = pool.getStats();
       console.log(
-        `  Iteration ${i}: buffers=${stats.totalBuffers}, allocated=${stats.allocatedBuffers}, free=${stats.freeBuffers}`
+        `  Iteration ${i}: buffers=${stats.totalBuffers}, allocated=${stats.allocatedBuffers}, free=${stats.freeBuffers}`,
       );
     }
   }
@@ -65,7 +65,9 @@ Deno.test("stress: buffer pool stress (rapid allocation/release)", async () => {
   const elapsed = (performance.now() - startTime) / 1000;
   const opsPerSec = ((iterations * 5) / elapsed).toFixed(0);
   console.log(
-    `✓ Buffer pool stress: ${iterations * 5} ops in ${elapsed.toFixed(2)}s (${opsPerSec} ops/s)`
+    `✓ Buffer pool stress: ${iterations * 5} ops in ${
+      elapsed.toFixed(2)
+    }s (${opsPerSec} ops/s)`,
   );
 
   const finalStats = pool.getStats();
@@ -104,7 +106,9 @@ Deno.test("stress: sequential prompts (cache reuse)", async () => {
     const tokenCount = reply.split(/\s+/).length;
     const tps = (tokenCount / elapsed).toFixed(1);
     console.log(
-      `Prompt ${idx + 1}: ~${tokenCount} tokens in ${elapsed.toFixed(2)}s (${tps} tok/s)`
+      `Prompt ${idx + 1}: ~${tokenCount} tokens in ${
+        elapsed.toFixed(2)
+      }s (${tps} tok/s)`,
     );
   }
 

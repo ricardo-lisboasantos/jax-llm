@@ -1,12 +1,12 @@
 /**
  * unit: WebGPU profiler tests
  */
-import { assertEquals, assert } from "@std/assert";
+import { assert, assertEquals } from "@std/assert";
 import {
-  WebGPUProfiler,
   globalProfiler,
   profileAsync,
   profileSync,
+  WebGPUProfiler,
 } from "./webgpu_profiler.ts";
 
 Deno.test("unit: WebGPUProfiler collects samples", () => {
@@ -98,7 +98,7 @@ Deno.test("unit: profileSync wrapper captures timing", () => {
 Deno.test("unit: profileAsync wrapper captures timing", async () => {
   globalProfiler.reset();
 
-  const asyncOp = profileAsync("async_delay", async () => {
+  const asyncOp = profileAsync("async_delay", () => {
     return new Promise((resolve) => {
       setTimeout(() => resolve(42), 10);
     });
