@@ -93,13 +93,15 @@ Short aliases are also accepted: `lfm`, `lfm2`, `lfm2.5`, `gemma`, `qwen`,
 
 Any other `"org/model-name"` string is treated as a Hugging Face repo ID and
 resolved dynamically (`isHuggingFaceRepo`, `resolveModel`), using the LFM2.5
-checkpoint loader as a generic fallback. See [docs/models.md](docs/models.md).
+checkpoint loader as a generic fallback. See
+[docs/reference/MODELS.md](docs/reference/MODELS.md).
 
 ## API Overview
 
 All public symbols are exported from the package root (`mod.ts` →
 `engine/index.ts`) and documented with JSDoc (`deno doc --lint` reports 0
-`missing-jsdoc` errors). See [docs/api.md](docs/api.md) for the full reference.
+`missing-jsdoc` errors). See [docs/reference/API.md](docs/reference/API.md) for
+the full reference.
 
 **Chat layer** (`engine/chat/`) — what most consumers need:
 
@@ -169,7 +171,7 @@ See [docs/architecture.md](docs/architecture.md) for the full guide.
 `loadConfig()` reads `config.json` at the project root (or the path in
 `JAX_JS_CONFIG_PATH`) and merges it over `DEFAULT_CONFIG`; `createConfig()`
 resolves model aliases on top of that. All fields are optional. See
-[docs/configuration.md](docs/configuration.md).
+[docs/guides/CONFIGURATION.md](docs/guides/CONFIGURATION.md).
 
 ## Training
 
@@ -190,7 +192,7 @@ for await (const epoch of runner.train(dataset)) {
 }
 ```
 
-See [docs/training.md](docs/training.md).
+See [docs/guides/TRAINING.md](docs/guides/TRAINING.md).
 
 ## Testing
 
@@ -237,11 +239,12 @@ deno doc --lint mod.ts  # JSDoc coverage (0 missing-jsdoc errors required)
 
 JSR requires ≥80% of exported symbols to have documentation; this package is at
 100%. Keep every new export documented. See
-[docs/development.md](docs/development.md) for the publishing checklist.
+[docs/guides/DEVELOPMENT.md](docs/guides/DEVELOPMENT.md) for the publishing
+checklist.
 
 CI (`.github/workflows/ci.yml`) runs `fmt --check`, `lint`, `check --all`, and
 `test -A` on every push and PR, and publishes to JSR on pushes to `main` — see
-[docs/development.md](docs/development.md#cicd).
+[docs/guides/DEVELOPMENT.md](docs/guides/DEVELOPMENT.md#cicd).
 
 ## Performance & Releases
 
