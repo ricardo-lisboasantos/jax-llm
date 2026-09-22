@@ -69,6 +69,10 @@ export type ModelDefinition = {
   contextSize: number;
   defaults: SamplingDefaults;
 
+  // Phase 3.0: Optional quantization support
+  quantizationEnabled?: boolean;
+  quantizationBits?: number;
+
   // --- Runtime concerns ---
   createTokenizer(data: Uint8Array): TokenizerInterface;
   loadCheckpoint(

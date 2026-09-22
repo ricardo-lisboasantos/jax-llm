@@ -9,7 +9,11 @@ import { createGemmaState, type GemmaState } from "./state/gemma_state.ts";
 import { fromSafetensors } from "./loaders/gemma.ts";
 import { type GemmaModel, runGemmaPrefill, runGemmaStep } from "./gemma.ts";
 import { HuggingFaceBpeTokenizer } from "../tokenizer/tokenizer.ts";
-import { createLfmState, type LfmState } from "./state/lfm_state.ts";
+import {
+  createLfmState,
+  disposeLfmPagedCache,
+  type LfmState,
+} from "./state/lfm_state.ts";
 import { lfmFromSafetensors } from "./loaders/lfm.ts";
 import { type LfmModel, runLfmPrefill, runLfmStep } from "./lfm.ts";
 import { type QwenModel, runQwenPrefill, runQwenStep } from "./qwen.ts";
@@ -226,6 +230,13 @@ function defineChatModel<
             dispose() {
               if (sessionDisposed) return;
               sessionDisposed = true;
+              // Phase 3.0: Dispose paged cache if this is an LFM state
+              if (implementation.id === "lfm2.5-350m") {
+                const lfmState = state as LfmState;
+                if (lfmState.pagedCache) {
+                  disposeLfmPagedCache(lfmState);
+                }
+              }
               tree.dispose(state);
             },
           };

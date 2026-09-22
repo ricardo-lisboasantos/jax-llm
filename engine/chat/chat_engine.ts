@@ -31,7 +31,25 @@ import { numpy as np } from "npm:@jax-js/jax@^0.1.25";
 import { ModelRuntime } from "../runtime/runtime.ts";
 import type { RuntimeConfig, SamplingDefaults } from "../runtime/types.ts";
 import { resolveSamplingDefaults, sampleLogits } from "./sampler.ts";
+import { globalProfiler } from "../llm/profiling/webgpu_profiler.ts";
 import type { ChatEngineOptions, ChatMessage, SystemInfo } from "./types.ts";
+
+/**
+ * Performance metrics collected during chat generation.
+ * Only populated when profiling is enabled.
+ */
+export interface ChatMetrics {
+  /** Time to first token (prefill latency) in milliseconds. */
+  ttftMs: number;
+  /** Prefill throughput in tokens per second. */
+  prefillTokPerSec: number;
+  /** Decode throughput in tokens per second. */
+  decodeTokPerSec: number;
+  /** 50th percentile decode step latency in milliseconds. */
+  p50JitterMs: number;
+  /** 90th percentile decode step latency in milliseconds. */
+  p90JitterMs: number;
+}
 
 /**
  * High-level chat API: pass a model name, call `init()`, then `chat()`.
@@ -43,6 +61,15 @@ export class ChatEngine {
   private maxTokens: number;
   private samplingOverrides?: Partial<SamplingDefaults>;
   private resolvedSampling?: SamplingDefaults;
+  // Phase 3.0: Performance monitoring
+  private profilingEnabled = false;
+  private metrics: ChatMetrics = {
+    ttftMs: 0,
+    prefillTokPerSec: 0,
+    decodeTokPerSec: 0,
+    p50JitterMs: 0,
+    p90JitterMs: 0,
+  };
 
   /**
    * Create a chat engine for a given model.
@@ -82,6 +109,55 @@ export class ChatEngine {
       this.runtime.definition.defaults,
       this.samplingOverrides,
     );
+  }
+
+  /**
+   * Enable performance profiling (Phase 3.0).
+   * Tracks TTFT, tok/s, and latency percentiles.
+   * Call before chat() or generate() to collect metrics.
+   *
+   * @example
+   * ```ts
+   * engine.enableProfiling();
+   * await engine.chat(history);
+   * const metrics = engine.getMetrics();
+   * console.log(`TTFT: ${metrics.ttftMs}ms, Decode: ${metrics.decodeTokPerSec} tok/s`);
+   * ```
+   */
+  enableProfiling(): void {
+    this.profilingEnabled = true;
+    globalProfiler.reset();
+  }
+
+  /**
+   * Get current performance metrics.
+   * Returns null if profiling was not enabled before the last generation.
+   *
+   * @returns Metrics object with TTFT, throughput, and latency percentiles,
+   *          or null if profiling disabled.
+   */
+  getMetrics(): ChatMetrics | null {
+    if (!this.profilingEnabled) {
+      return null;
+    }
+    const stats = globalProfiler.getAllStats();
+    const result = { ...this.metrics };
+
+    // TTFT: time to first token (from prefill start to first decode step)
+    const ttftStat = stats.get("prefill");
+    if (ttftStat) {
+      result.ttftMs = ttftStat.meanMs;
+    }
+
+    // Decode step latency (p50/p90 jitter)
+    const decodeStat = stats.get("decode_step");
+    if (decodeStat) {
+      result.decodeTokPerSec = 1000 / decodeStat.meanMs;
+      result.p50JitterMs = decodeStat.p50Ms;
+      result.p90JitterMs = decodeStat.p90Ms;
+    }
+
+    return result;
   }
 
   /**
@@ -160,13 +236,27 @@ export class ChatEngine {
     let logits: np.Array | null = null;
 
     try {
+      // Phase 3.0: Wrap prefill with profiler if enabled
+      if (this.profilingEnabled) {
+        globalProfiler.start("prefill");
+      }
       logits = session.prefill(inputIds);
+      if (this.profilingEnabled) {
+        globalProfiler.end("prefill");
+      }
 
       for (let i = 0; i < this.maxTokens; i++) {
+        // Phase 3.0: Wrap decode step with profiler if enabled
+        if (this.profilingEnabled) {
+          globalProfiler.start("decode_step");
+        }
         const nextToken = await this.sampleNextToken(
           logits,
           [...promptTokens, ...generatedTokens],
         );
+        if (this.profilingEnabled) {
+          globalProfiler.end("decode_step");
+        }
 
         if (stopTokens.includes(nextToken)) break;
 
@@ -209,7 +299,10 @@ export class ChatEngine {
     logits: np.Array,
     previousTokens: number[],
   ): Promise<number> {
-    const data = await logits.data() as Float32Array;
+    const rawData = await logits.data();
+    const data = rawData instanceof Float32Array
+      ? rawData
+      : new Float32Array(rawData as ArrayLike<number>);
     return sampleLogits(data, {
       temperature: this.resolvedSampling!.temperature,
       topK: this.resolvedSampling!.topK,

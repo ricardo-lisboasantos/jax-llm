@@ -72,7 +72,17 @@ export function resolveModel(
   // 1. Built-in
   if (isBuiltInModel(modelId)) {
     const model = CHAT_MODELS[modelId] as ChatModel;
-    return applyOverrides(model, modelId, overrides);
+    const resolved = applyOverrides(model, modelId, overrides);
+    // Phase 3.0: Check for INT8 quantized variant (e.g., model_q8.safetensors)
+    if (resolved.weightsUrl.includes(".safetensors")) {
+      const q8Url = resolved.weightsUrl.replace(
+        ".safetensors",
+        "_q8.safetensors",
+      );
+      resolved.weightsUrl = q8Url; // Will fallback to fp32 if q8 doesn't exist
+      resolved.quantizationEnabled = true;
+    }
+    return resolved;
   }
 
   // 2. Alias

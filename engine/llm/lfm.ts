@@ -141,6 +141,12 @@ export function runLfmStep(
   const logits = runLinear(model.embedTokens, x).reshape([
     LFM_CONFIG.vocabSize,
   ]);
+
+  // Phase 3.0: Update paged cache if enabled (for long-context tracking)
+  if (state.usePagedCache && state.pagedCache) {
+    state.pagedCache.updateValidLength(state.position, state.position + 1);
+  }
+
   state.position++;
   return logits;
 }

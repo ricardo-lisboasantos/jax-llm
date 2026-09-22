@@ -43,14 +43,17 @@ export interface ProfilerStats {
  */
 export class WebGPUProfiler {
   private samples = new Map<string, number[]>();
-  private timestamps = new Map<string, number>();
+  private timestamps = new Map<string, number[]>();
 
   /**
    * Mark the start of a timed operation.
    * @param label Operation label (e.g., "attention_forward", "embedding")
    */
   start(label: string): void {
-    this.timestamps.set(label, performance.now());
+    if (!this.timestamps.has(label)) {
+      this.timestamps.set(label, []);
+    }
+    this.timestamps.get(label)!.push(performance.now());
   }
 
   /**
@@ -58,17 +61,17 @@ export class WebGPUProfiler {
    * @param label Operation label (must match a prior `start()` call)
    */
   end(label: string): void {
-    const startTime = this.timestamps.get(label);
-    if (startTime === undefined) {
+    const stack = this.timestamps.get(label);
+    if (!stack || stack.length === 0) {
       console.warn(`No start timestamp for label: ${label}`);
       return;
     }
+    const startTime = stack.pop()!;
     const elapsedMs = performance.now() - startTime;
     if (!this.samples.has(label)) {
       this.samples.set(label, []);
     }
     this.samples.get(label)!.push(elapsedMs);
-    this.timestamps.delete(label);
   }
 
   /**
@@ -153,6 +156,79 @@ export class WebGPUProfiler {
       );
     }
     return rows.join("\n");
+  }
+
+  /**
+   * Export metrics as JSON for external monitoring systems (Phase 3.0).
+   * Suitable for APM dashboards and regression tracking.
+   *
+   * @param stats Map of operation → statistics
+   * @returns JSON object with latency distribution and timestamp
+   *
+   * @example
+   * ```typescript
+   * const metrics = WebGPUProfiler.metricsJSON(globalProfiler.getAllStats());
+   * console.log(JSON.stringify(metrics)); // Send to DataDog, Prometheus, etc.
+   * ```
+   */
+  static metricsJSON(
+    stats: Map<string, ProfilerStats>,
+  ): Record<string, unknown> {
+    const operations: Record<string, unknown> = {};
+
+    for (const [label, stat] of stats) {
+      operations[label] = {
+        count: stat.count,
+        meanMs: Math.round(stat.meanMs * 100) / 100,
+        p50Ms: Math.round(stat.p50Ms * 100) / 100,
+        p90Ms: Math.round(stat.p90Ms * 100) / 100,
+        p99Ms: Math.round(stat.p99Ms * 100) / 100,
+        stddevMs: Math.round(stat.stddevMs * 100) / 100,
+      };
+    }
+
+    return {
+      timestamp: new Date().toISOString(),
+      operations,
+    };
+  }
+
+  /**
+   * Detect performance regression by comparing p90 latency against baseline (Phase 3.0).
+   * Used in CI/CD to catch performance regressions automatically.
+   *
+   * @param stats Current metrics
+   * @param baseline Expected p90 latency (ms)
+   * @param threshold Regression threshold in ms (default: 5ms)
+   * @returns True if regression detected (p90 > baseline + threshold)
+   *
+   * @example
+   * ```typescript
+   * const regression = WebGPUProfiler.detectRegression(
+   *   globalProfiler.getAllStats(),
+   *   50,  // baseline: 50ms
+   *   5,   // threshold: 5ms
+   * );
+   * if (regression) {
+   *   process.exit(1); // Fail CI on regression
+   * }
+   * ```
+   */
+  static detectRegression(
+    stats: Map<string, ProfilerStats>,
+    baseline: number,
+    threshold: number = 5,
+  ): boolean {
+    const decodeStat = stats.get("decode_step");
+    if (!decodeStat) return false;
+    const regression = decodeStat.p90Ms - baseline;
+    if (regression > threshold) {
+      console.warn(
+        `⚠️ Performance regression detected: p90 ${decodeStat.p90Ms}ms (baseline ${baseline}ms, delta +${regression}ms)`,
+      );
+      return true;
+    }
+    return false;
   }
 }
 

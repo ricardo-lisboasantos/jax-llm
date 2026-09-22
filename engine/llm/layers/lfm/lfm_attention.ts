@@ -87,6 +87,7 @@ function runAttentionStep(
   validLength: number,
 ): { output: np.Array; cache: LfmAttentionArrays } {
   const T = 1;
+
   let q = runLinear(qProj, x.ref).reshape([
     T,
     LFM_CONFIG.numAttentionHeads,
@@ -97,6 +98,7 @@ function runAttentionStep(
     LFM_CONFIG.numKeyValueHeads,
     LFM_CONFIG.headDim,
   ]);
+
   const v = runLinear(vProj, x).reshape([
     T,
     LFM_CONFIG.numKeyValueHeads,
@@ -120,6 +122,7 @@ function runAttentionStep(
     outProj,
     attn.reshape([T, LFM_CONFIG.numAttentionHeads * LFM_CONFIG.headDim]),
   );
+
   return { output, cache: { key, value } };
 }
 

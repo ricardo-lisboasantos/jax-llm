@@ -25,8 +25,10 @@ export const PAGE_SIZE = 512; // Tokens per page
 export const DEFAULT_MAX_PAGES = 128; // Max pages in cache
 
 export interface PageTableEntry {
-  /** Page index in the pool. */
-  pageIdx: number;
+  /** Logical page index (0, 1, 2...). */
+  pageLogicalIdx: number;
+  /** Physical page ID for allocation tracking (may skip after eviction). */
+  pagePhysicalId: number;
   /** Number of valid tokens in this page. */
   validLength: number;
   /** Last access time (for LRU eviction). */
@@ -104,11 +106,11 @@ export class PagedKVCache {
     layerIdx: number,
     tokenPosition: number,
   ): { pageIdx: number; offset: number } {
-    const pageIdx = Math.floor(tokenPosition / this.config.pageSize);
+    const pageLogicalIdx = Math.floor(tokenPosition / this.config.pageSize);
     const offset = tokenPosition % this.config.pageSize;
 
     const pages = this.keyPages[layerIdx];
-    if (!pages.has(pageIdx)) {
+    if (!pages.has(pageLogicalIdx)) {
       // Allocate new page
       if (this.allocatedPages.size >= this.config.maxPages) {
         // Evict LRU page
@@ -116,18 +118,19 @@ export class PagedKVCache {
       }
 
       // Create new page (simplified: just a marker)
-      const newPageId = this.nextPageId++;
+      const newPagePhysicalId = this.nextPageId++;
       pages.set(
-        pageIdx,
+        pageLogicalIdx,
         new Float32Array(this.config.pageSize * this.config.headDim),
       );
-      this.allocatedPages.add(newPageId);
-      this.pageAccessOrder.push(newPageId);
+      this.allocatedPages.add(newPagePhysicalId);
+      this.pageAccessOrder.push(newPagePhysicalId);
 
       // Track in page table
       const pageEntries = this.pageTable.get(layerIdx)!;
       pageEntries.push({
-        pageIdx: newPageId,
+        pageLogicalIdx: pageLogicalIdx,
+        pagePhysicalId: newPagePhysicalId,
         validLength: 0,
         lastAccessMs: performance.now(),
       });
@@ -135,12 +138,12 @@ export class PagedKVCache {
 
     // Update access time
     const pageEntries = this.pageTable.get(layerIdx)!;
-    const entry = pageEntries.find((e) => e.pageIdx === pageIdx);
+    const entry = pageEntries.find((e) => e.pageLogicalIdx === pageLogicalIdx);
     if (entry) {
       entry.lastAccessMs = performance.now();
     }
 
-    return { pageIdx, offset };
+    return { pageIdx: pageLogicalIdx, offset };
   }
 
   /**
@@ -166,10 +169,10 @@ export class PagedKVCache {
    * @param tokenPosition Last valid token position (exclusive)
    */
   updateValidLength(layerIdx: number, tokenPosition: number): void {
-    const pageIdx = Math.floor(tokenPosition / this.config.pageSize);
+    const pageLogicalIdx = Math.floor(tokenPosition / this.config.pageSize);
     const pageEntries = this.pageTable.get(layerIdx)!;
     for (const entry of pageEntries) {
-      if (Math.floor(entry.pageIdx / this.config.pageSize) === pageIdx) {
+      if (entry.pageLogicalIdx === pageLogicalIdx) {
         entry.validLength = tokenPosition % this.config.pageSize;
       }
     }

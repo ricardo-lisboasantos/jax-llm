@@ -1,0 +1,133 @@
+# Phase 3.0 Performance Implementation — Deployment Decision
+
+**Date:** 2026-09-22  
+**Audit Status:** 🔴 **RED — BLOCK DEPLOYMENT**  
+**Critical Issues Found:** 3 (memory leak, use-after-free, INT8 fallback)  
+**High-Severity Issues:** 2 (profiler race, cache corruption)  
+**Test Coverage:** 0% (no tests provided)
+
+---
+
+## Quick Audit Results
+
+| Dimension | Status | Verdict |
+|-----------|--------|---------|
+| **Functionality** | 🟡 Architectural sound, integration incomplete | Defer to Medic |
+| **Security** | 🟢 No secrets/unsafe network | Pass |
+| **Memory Safety** | 🔴 **3 Critical leaks** | Fail |
+| **Type Safety** | 🟢 Full TypeScript, no `any` | Pass |
+| **Error Handling** | 🟡 Incomplete fallbacks | Conditional pass |
+| **Backward Compat** | 🟢 100% opt-in, no breaking changes | Pass |
+| **Performance** | 🟡 Plausible (4-15×) but unverified | Unvalidated |
+| **Test Coverage** | 🔴 **0/127 tests provided** | Fail |
+
+---
+
+## The 3 Critical Blockers
+
+### 1️⃣ **Paged Cache Memory Leak** (lfm_state.ts)
+- Pages accumulate across sessions without clearing
+- OOM after ~10-20 long-context sequences
+- **Fix:** 1 day (add validation + clear at session start)
+
+### 2️⃣ **Buffer Pool Use-After-Free** (lfm_attention.ts + buffer_pool.ts)
+- Pool IDs not bound to actual GPU buffers
+- Release can reuse pool ID while JAX buffer still live
+- **Fix:** 2-3 days (redesign pool proxy, bind to actual storage)
+
+### 3️⃣ **INT8 Quantization Fallback Broken** (runtime.ts)
+- URL transformation is brittle; no validation of fallback URL
+- Silent failure if both INT8 + FP32 unavailable
+- **Fix:** 1 day (save original URL, validate, detailed error)
+
+---
+
+## The 2 High-Severity Issues
+
+### 4️⃣ **Profiler Race Condition** (webgpu_profiler.ts)
+- Concurrent sessions overwrite each other's timestamps
+- Metrics become garbage if multiple users profile simultaneously
+- **Fix:** 1 day (use stack of timestamps, not single value)
+
+### 5️⃣ **Paged Cache Page Table Corruption** (paged_cache.ts)
+- Page index logic is inverted (compares auto-inc ID to logical index)
+- `updateValidLength()` never runs; cache always returns empty
+- **Fix:** 1 day (separate logical/physical indices)
+
+---
+
+## Why These Matter for Production
+
+| Issue | Runtime Symptom | Impact |
+|-------|---|---|
+| Memory leak | OOM crash after 20+ sessions | Availability SLA violation |
+| Use-after-free | Hang/corruption in decode step | Silent data corruption |
+| INT8 fallback | Wrong model variant loaded silently | Performance regression hidden |
+| Profiler race | Metrics show garbage numbers | Observability black hole |
+| Cache corruption | Garbage logits returned | Model produces nonsense |
+
+---
+
+## Remediation Timeline
+
+```
+Current State: 🔴 RED
+  ↓ (8-10 business days)
+Week 1: Fix CRITICAL #1-3 + HIGH #1-2 = 6 days
+Week 2: Add 50+ unit tests = 3 days
+Week 3: Integration tests + benchmarks = 2 days
+  ↓
+Go/No-Go Review: 2026-10-01
+  ↓
+Conditional: 🟢 GREEN (if all fixes pass)
+```
+
+---
+
+## Deployment Decision
+
+### **BLOCK.** Do not merge to main.
+
+**Rationale:**
+1. **Memory safety:** 3 critical leaks/dangling refs are production red flags.
+2. **Observability:** Race condition in profiler defeats the purpose of Phase 3.0 (metrics).
+3. **Test coverage:** No tests means no confidence; can't verify fixes work.
+4. **Silent failures:** INT8 fallback + cache corruption are sneaky (work-ish, wrong results).
+
+### Next Steps
+
+1. **Route to Medic** → Reproduce + confirm each critical issue
+2. **Hand to Forge** → Implement fixes (8-10 days)
+3. **Back to Guardian** → Validate fixes + test coverage (2 days)
+4. **Decision point** → Sept 29-Oct 1
+
+---
+
+## What's Salvageable
+
+✅ **Profiling infrastructure** (webgpu_profiler.ts) — solid after race condition fix  
+✅ **Tokenizer parallelization** (Promise.allSettled) — safe, just needs error reporting  
+✅ **Backward compatibility** — 100% safe, all opt-in  
+✅ **Code quality** — no security holes, no secrets, proper timeouts  
+
+❌ **Buffer pool** — needs redesign (proxy model)  
+❌ **Paged cache** — needs page table rewrite  
+❌ **INT8 fallback** — needs URL handling rewrite  
+❌ **Tests** — must build from scratch (50+ cases)
+
+---
+
+## Confidence Level
+
+| Dimension | Current | Post-Fix | Confidence |
+|-----------|---------|----------|-----------|
+| Will it work? | 🟡 Maybe | 🟢 Yes | High (fixes are straightforward) |
+| Will it perform? | 🟡 Unverified | 🟡 Probably | Medium (need benchmarks) |
+| Will it break? | 🔴 Very likely (leaks) | 🟢 No | High (full backward compat) |
+| Will it ship? | 🔴 No | 🟢 Yes | High (path is clear) |
+
+---
+
+**Guardian Verdict: 🔴 RED — Fix required, clear path to GREEN.**
+
+_Full audit report saved to `PHASE_3_0_SECURITY_AUDIT.md`_
