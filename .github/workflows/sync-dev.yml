@@ -1,0 +1,75 @@
+name: Sync dev
+
+# Automated delivery hygiene: every push to main is merged back into dev so
+# the branches never silently diverge (version stamps, hotfixes, and release
+# notes flow back automatically). On merge conflict, opens a `sync` PR to
+# dev for manual resolution instead of failing silently.
+#
+# Cost policy: standard `ubuntu-latest` runners only (see cost-guard in
+# ci.yml).
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: sync-dev
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    name: Merge main into dev
+    if: github.repository == 'ricardo-lisboasantos/jax-llm'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: dev
+
+      - name: Merge main into dev
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main dev
+          git checkout dev
+          MAIN_SHA="$(git rev-parse origin/main)"
+          if git merge --ff-only origin/main 2>/dev/null; then
+            echo "Fast-forwarded dev to $MAIN_SHA"
+          elif git merge origin/main -m "chore(sync): merge main into dev" 2>/dev/null; then
+            echo "Merged main into dev"
+          else
+            echo "CONFLICT=true" >> "$GITHUB_ENV"
+            git merge --abort || true
+            echo "::warning::main → dev merge conflicts; opening a sync PR"
+          fi
+          echo "### Sync dev" >> "$GITHUB_STEP_SUMMARY"
+          echo "- main: \`$MAIN_SHA\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- conflict: \`${CONFLICT:-false}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Push dev
+        if: env.CONFLICT != 'true'
+        run: git push origin dev
+
+      - name: Open conflict PR
+        if: env.CONFLICT == 'true'
+        run: |
+          set -euo pipefail
+          BRANCH="sync/main-into-dev"
+          git checkout -B "$BRANCH"
+          git push --force origin "$BRANCH"
+          if gh pr view "$BRANCH" --json number >/dev/null 2>&1; then
+            echo "Sync PR already open for $BRANCH"
+          else
+            gh pr create --head "$BRANCH" --base dev \
+              --title "chore(sync): resolve main → dev conflicts" \
+              --label sync \
+              --body "Automatic main → dev sync hit merge conflicts. Resolve them here, then merge into \`dev\`. After merging, delete this branch."
+          fi
+          exit 1
