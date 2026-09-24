@@ -297,7 +297,7 @@ if (import.meta.main) {
     };
     await Deno.writeTextFile(
       String(args["manifest"]),
-      JSON.stringify(manifest, null, 2),
+      JSON.stringify(manifest, null, 2) + "\n",
     );
     console.log(`Wrote ${args["manifest"]}`);
   }

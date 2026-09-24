@@ -1,5 +1,8 @@
 name: Release publish
 
+# Cost policy: standard `ubuntu-latest` runners only (see cost-guard in
+# ci.yml). Never use large runners, matrices, or self-hosted GPU runners.
+#
 # Publishes a release AFTER its `release/vX.Y.Z` proposal PR merges to main.
 # Trigger: pull request to main with the `release` label, merged (any method).
 # A `pre-release` label on the same PR marks the GitHub Release accordingly.
@@ -109,6 +112,7 @@ jobs:
           if [[ -n "$PREV_TAG" ]]; then FROM_ARG=(--from "$PREV_TAG"); fi
           deno run -A scripts/generate_changelog.ts "${FROM_ARG[@]}" --to HEAD \
             --version "$VERSION" --manifest release-manifest.json
+          deno fmt release-manifest.json
 
       - name: Push tag
         run: |

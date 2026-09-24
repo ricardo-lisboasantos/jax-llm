@@ -20,6 +20,28 @@ permissions:
   contents: read
 
 jobs:
+  cost-guard:
+    name: Cost guard
+    # Cost policy: standard `ubuntu-latest` runners only — no large runners,
+    # no matrices, no self-hosted GPU. Public repos get unlimited standard
+    # minutes; anything else bills. This job fails the gate if any workflow
+    # file references a different runner.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Assert standard runners only
+        # The `:[0-9]+:` filter matches real `runs-on:` YAML keys only, not
+        # these script lines mentioning the pattern.
+        run: |
+          VIOLATIONS="$(grep -rHn 'runs-on:' .github/workflows/ | grep -E ':[0-9]+: +runs-on:' | grep -vE 'runs-on: ubuntu-latest[[:space:]]*(#|$)' || true)"
+          if [[ -n "$VIOLATIONS" ]]; then
+            echo "::error::non-standard runner detected (large runners bill money):"
+            echo "$VIOLATIONS"
+            exit 1
+          fi
+          echo "✅ All workflow jobs use standard runners only."
+          grep -rHn 'runs-on:' .github/workflows/ | grep -E ':[0-9]+: +runs-on:' | sort -t: -k3 | uniq -c -f2
   conventional:
     name: Conventional commits
     if: github.event_name == 'pull_request'
@@ -165,20 +187,22 @@ jobs:
     name: CI gate
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # `conventional` only runs on pull_request; on pushes it is skipped,
-    # which the gate treats as pass (see script below).
-    needs: [conventional, check, test, publish-dry-run]
+    # `cost-guard` has no event condition (runs everywhere), so no
+    # skipped-result handling is needed for it.
+    needs: [conventional, cost-guard, check, test, publish-dry-run]
     if: always()
     steps:
       - name: Gate summary
         run: |
           echo "## CI gate" >> "$GITHUB_STEP_SUMMARY"
           echo "- conventional: ${{ needs.conventional.result }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- cost-guard: ${{ needs.cost-guard.result }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- check: ${{ needs.check.result }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- test: ${{ needs.test.result }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- publish-dry-run: ${{ needs.publish-dry-run.result }}" >> "$GITHUB_STEP_SUMMARY"
           CONV="${{ needs.conventional.result }}"
           if { [ "$CONV" != "success" ] && [ "$CONV" != "skipped" ]; } || \
+             [ "${{ needs.cost-guard.result }}" != "success" ] || \
              [ "${{ needs.check.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ] || \
              [ "${{ needs.publish-dry-run.result }}" != "success" ]; then
