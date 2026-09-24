@@ -1,12 +1,26 @@
 {
   "name": "@ricardo/jax-llm",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "A JAX-based LLM engine for JavaScript/TypeScript",
-  "keywords": ["jax", "llm", "ai", "machine-learning"],
+  "keywords": [
+    "jax",
+    "llm",
+    "ai",
+    "machine-learning"
+  ],
   "exports": "./mod.ts",
   "publish": {
-    "include": ["mod.ts", "engine", "README.md", "LICENSE"],
-    "exclude": ["**/*_test.ts", "cli", "docs"]
+    "include": [
+      "mod.ts",
+      "engine",
+      "README.md",
+      "LICENSE"
+    ],
+    "exclude": [
+      "**/*_test.ts",
+      "cli",
+      "docs"
+    ]
   },
   "license": "MIT",
   "tasks": {
@@ -38,10 +52,16 @@
     "@std/assert": "jsr:@std/assert@1",
     "@std/cli": "jsr:@std/cli@^1.0.32"
   },
-  "unstable": ["webgpu", "kv"],
+  "unstable": [
+    "webgpu",
+    "kv"
+  ],
   "lint": {
     "rules": {
-      "exclude": ["no-import-prefix", "no-unversioned-import"]
+      "exclude": [
+        "no-import-prefix",
+        "no-unversioned-import"
+      ]
     }
   }
 }
