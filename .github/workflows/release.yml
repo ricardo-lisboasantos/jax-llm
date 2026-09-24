@@ -267,7 +267,9 @@ jobs:
             echo "::error::missing JSDoc (0 allowed)"
             exit 1
           fi
-          npx jsr publish --dry-run
+          # --allow-dirty: the stamp files are intentionally uncommitted here;
+          # they get committed into the release PR below.
+          npx jsr publish --dry-run --allow-dirty
 
       - name: Open release PR
         if: needs.plan.outputs.dry_run != 'true'

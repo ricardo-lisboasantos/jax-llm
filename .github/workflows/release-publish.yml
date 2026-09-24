@@ -124,7 +124,9 @@ jobs:
           git push origin "v$VERSION"
 
       - name: Publish to JSR
-        run: npx jsr publish
+        # --allow-dirty: only the untracked release-manifest.json is extra;
+        # the published file set is fixed by deno.json `publish.include`.
+        run: npx jsr publish --allow-dirty
 
       - name: Create GitHub Release
         run: |
