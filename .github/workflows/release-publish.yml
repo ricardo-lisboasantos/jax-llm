@@ -112,6 +112,7 @@ jobs:
           if [[ -n "$PREV_TAG" ]]; then FROM_ARG=(--from "$PREV_TAG"); fi
           deno run -A scripts/generate_changelog.ts "${FROM_ARG[@]}" --to HEAD \
             --version "$VERSION" --manifest release-manifest.json
+          deno fmt release-manifest.json
 
       - name: Push tag
         run: |

@@ -250,6 +250,9 @@ jobs:
           deno run -A scripts/generate_changelog.ts "${FROM_ARG[@]}" --to HEAD \
             --version "$VERSION" --out NOTES.md --manifest release-manifest.json \
             --write-changelog --write-docs
+          # Generated files must satisfy `deno fmt --check` (markdown line
+          # wrapping, JSON trailing newline) before the re-verify below.
+          deno fmt NOTES.md release-manifest.json CHANGELOG.md "docs/releases/v$VERSION.md"
           echo "### Release contents (v$VERSION)" >> "$GITHUB_STEP_SUMMARY"
           cat NOTES.md >> "$GITHUB_STEP_SUMMARY"
 
