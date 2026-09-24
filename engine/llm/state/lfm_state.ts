@@ -14,6 +14,16 @@ export type LfmState = {
   // Phase 3.0: Optional paged cache for long-context (8K+ tokens)
   pagedCache?: PagedKVCache;
   usePagedCache?: boolean;
+  /**
+   * Speculative-draft snapshot (PLD): `.ref`-bumped pre-score caches plus
+   * the pre-score position. Caches are persistent-functional (replaced,
+   * never mutated), so a snapshot is O(1) — no bytes are copied.
+   * Set by `snapshotLfmDraft`, consumed by confirm/truncate.
+   */
+  draftSnapshot?: {
+    position: number;
+    caches: LfmCache[];
+  };
 };
 
 export function createLfmState({

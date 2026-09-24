@@ -109,6 +109,22 @@ export class ChatEngine {
       this.runtime.definition.defaults,
       this.samplingOverrides,
     );
+    // T4: JIT pre-warm — shift first-compile cost from TTFT to load.
+    // Single-token prefill triggers kernel compilation once; failures
+    // are ignored so load never breaks (first real prefill compiles instead).
+    try {
+      const tokenizer = this.runtime.getTokenizer();
+      const session = this.runtime.createSession();
+      try {
+        const warmIds = np.array([tokenizer.bosToken], { dtype: np.uint32 });
+        const logits = await session.prefill(warmIds);
+        await logits.data();
+      } finally {
+        session.dispose();
+      }
+    } catch {
+      // Ignore — first real prefill will compile instead.
+    }
   }
 
   /**
@@ -240,7 +256,7 @@ export class ChatEngine {
       if (this.profilingEnabled) {
         globalProfiler.start("prefill");
       }
-      logits = session.prefill(inputIds);
+      logits = await session.prefill(inputIds);
       if (this.profilingEnabled) {
         globalProfiler.end("prefill");
       }
@@ -250,9 +266,18 @@ export class ChatEngine {
         if (this.profilingEnabled) {
           globalProfiler.start("decode_step");
         }
+        // Capped repetition window (512): avoids O(n) copy + Set build
+        // per token on long sessions; penalty focuses on recent tokens.
+        const totalPrev = promptTokens.length + generatedTokens.length;
+        const previousTokens = totalPrev <= 512
+          ? [...promptTokens, ...generatedTokens]
+          : [
+            ...promptTokens.slice(-256),
+            ...generatedTokens.slice(-256),
+          ];
         const nextToken = await this.sampleNextToken(
           logits,
-          [...promptTokens, ...generatedTokens],
+          previousTokens,
         );
         if (this.profilingEnabled) {
           globalProfiler.end("decode_step");
@@ -265,7 +290,7 @@ export class ChatEngine {
 
         if (i === this.maxTokens - 1) break;
 
-        logits = session.step(nextToken);
+        logits = await session.step(nextToken);
       }
     } finally {
       session.dispose();

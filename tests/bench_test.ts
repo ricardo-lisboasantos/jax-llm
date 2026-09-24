@@ -140,7 +140,7 @@ Deno.test("bench: TTFT + encode/prefill/decode throughput (needs network)", asyn
       try {
         const prefill = await benchmarkPrefillFn(
           async () => {
-            const logits = session.prefill(
+            const logits = await session.prefill(
               np.array(shortIds, { dtype: np.uint32 }),
             );
             await logits.data();
@@ -150,7 +150,7 @@ Deno.test("bench: TTFT + encode/prefill/decode throughput (needs network)", asyn
         );
         const decode = await benchmarkDecodeSteps(
           async (t: number) => {
-            const logits = session.step(t);
+            const logits = await session.step(t);
             await logits.data();
           },
           Array.from(

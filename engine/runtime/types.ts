@@ -8,6 +8,7 @@
 
 // Type-only import — np.DType is used only in type positions.
 import type { numpy as np } from "npm:@jax-js/jax@^0.1.25";
+import type { safetensors } from "npm:@jax-js/loaders@^0.1.3";
 
 /** Compute backend selection. */
 export type Backend = "webgpu" | "wasm";
@@ -36,12 +37,24 @@ export type TokenizerInterface = {
 /**
  * A single prefill/decode inference sequence.
  * Created per-conversation (or per-turn) and disposed when done.
+ * Async to allow weight paging (e.g. MoE expert on-demand hydration);
+ * fully device-resident models resolve immediately.
  */
 export type InferenceSession = {
   /** Process the full prompt at once; returns logits for the last token. */
-  prefill(tokenIds: np.Array): np.Array;
+  prefill(tokenIds: np.Array): Promise<np.Array>;
   /** Process a single generated token; returns next-token logits. */
-  step(token: number): np.Array;
+  step(token: number): Promise<np.Array>;
+  /**
+   * Score k drafted tokens in one batched forward (speculative
+   * verification). Returns per-token logits `[k, vocab]`. Optional —
+   * present only when the model supports draft scoring (LFM).
+   */
+  scoreTokens?(draftIds: np.Array): Promise<np.Array>;
+  /** Keep scored state after full draft acceptance. Requires scoreTokens. */
+  confirmDraft?(): void;
+  /** Roll back to the pre-score state after draft rejection. */
+  truncateDraft?(): void;
   /** Release KV-cache and intermediate buffers. */
   dispose(): void;
 };
@@ -52,6 +65,16 @@ export type LoadedModel = {
   device: string;
   createSession(): InferenceSession;
   dispose(): void;
+};
+
+/**
+ * Incremental sharded-load handle (B2): consume one parsed shard at a
+ * time so peak memory stays near a single shard instead of the full
+ * checkpoint. Mirrors `PagedModelStaging` in the model layer.
+ */
+export type PagedLoadHandle = {
+  stageShard(file: safetensors.File): Promise<void>;
+  finish(device: string): Promise<LoadedModel>;
 };
 
 /**
@@ -80,6 +103,21 @@ export type ModelDefinition = {
     dtype: np.DType,
     device: string,
   ): Promise<LoadedModel>;
+  /**
+   * Load from pre-parsed shard files (multi-shard `model.safetensors.index.json`
+   * checkpoints). Optional — models without sharded variants omit it and the
+   * runtime falls back to single-file `loadCheckpoint`.
+   */
+  loadCheckpointFromFiles?(
+    files: safetensors.File[],
+    dtype: np.DType,
+    device: string,
+  ): Promise<LoadedModel>;
+  /**
+   * Incremental sharded load (B2): one shard at a time, peak ≈ 1 shard.
+   * Optional — falls back to `loadCheckpointFromFiles` / `loadCheckpoint`.
+   */
+  beginPagedLoad?(dtype: np.DType): Promise<PagedLoadHandle>;
 
   // --- Chat concerns ---
   formatPrompt(history: import("../chat/types.ts").ChatMessage[]): string;

@@ -15,7 +15,14 @@ import {
   type LfmState,
 } from "./state/lfm_state.ts";
 import { lfmFromSafetensors } from "./loaders/lfm.ts";
-import { type LfmModel, runLfmPrefill, runLfmStep } from "./lfm.ts";
+import {
+  confirmLfmDraft,
+  type LfmModel,
+  runLfmPrefill,
+  runLfmScoreDrafts,
+  runLfmStep,
+  truncateLfmDraft,
+} from "./lfm.ts";
 import { type QwenModel, runQwenPrefill, runQwenStep } from "./qwen.ts";
 import { createQwenState, type QwenState } from "./state/qwen_state.ts";
 import { qwenFromSafetensors } from "./loaders/qwen.ts";
@@ -65,7 +72,11 @@ export {
 };
 import { bonsaiFromSafetensors } from "./loaders/bonsai.ts";
 import { type BonsaiState, createBonsaiState } from "./state/bonsai_state.ts";
-import { mapleFromSafetensors } from "./loaders/maple.ts";
+import {
+  beginMaplePagedLoad,
+  mapleFromSafetensors,
+  mapleFromSafetensorsPaged,
+} from "./loaders/maple.ts";
 import { createMapleState, type MapleState } from "./state/maple_state.ts";
 
 // Gemma chat-template control tokens in tokenizer.model.
@@ -81,10 +92,16 @@ export type ChatTokenizer = {
   decodeGenerated(tokens: number[]): string;
 };
 
-/** One stateful prefill/decode sequence. */
+/** One stateful prefill/decode sequence. Async to allow weight paging. */
 export type ChatModelSession = {
-  prefill(tokenIds: np.Array): np.Array;
-  step(token: number): np.Array;
+  prefill(tokenIds: np.Array): Promise<np.Array>;
+  step(token: number): Promise<np.Array>;
+  /** Batched draft scoring (present only when the model supports it). */
+  scoreTokens?(draftIds: np.Array): Promise<np.Array>;
+  /** Keep scored state after full draft acceptance. */
+  confirmDraft?(): void;
+  /** Roll back to the pre-score state after draft rejection. */
+  truncateDraft?(): void;
   dispose(): void;
 };
 
@@ -115,6 +132,20 @@ export type ChatModel<Id extends string = string> = {
     dtype: np.DType,
     device: string,
   ): Promise<LoadedChatModel>;
+
+  /**
+   * Load from pre-parsed shard files (multi-shard
+   * `model.safetensors.index.json` checkpoints). Mirrors
+   * `ModelDefinition.loadCheckpointFromFiles` in the runtime layer.
+   */
+  loadCheckpointFromFiles?(
+    files: safetensors.File[],
+    dtype: np.DType,
+    device: string,
+  ): Promise<LoadedChatModel>;
+  beginPagedLoad?(
+    dtype: np.DType,
+  ): Promise<PagedModelStaging<LoadedChatModel>>;
 
   createTokenizer(data: Uint8Array): ChatTokenizer;
   formatPrompt(history: ChatMessage[]): string;
@@ -147,11 +178,183 @@ type ChatModelImplementation<
   formatPrompt(history: ChatMessage[]): string;
   stopTokens(tokenizer: ChatTokenizer): number[];
   loadModel(file: safetensors.File, dtype: np.DType): Promise<Model>;
+  /**
+   * Sharded variant: receives one parsed File per shard so large
+   * checkpoints (MoE) can stage tensors incrementally instead of
+   * merging all shard buffers at once. Falls back to merge + loadModel.
+   */
+  loadModelPaged?(
+    files: safetensors.File[],
+    dtype: np.DType,
+  ): Promise<Model>;
+  /**
+   * Incremental sharded load (B2): one shard at a time, peak ≈ 1 shard.
+   * Falls back to `loadModelPaged` / merge + `loadModel` when absent.
+   */
+  beginPagedLoad?(dtype: np.DType): Promise<PagedModelStaging<Model>>;
   createState(dtype: np.DType): State;
-  prefill(model: Model, tokenIds: np.Array, state: State): np.Array;
-  step(model: Model, token: number, state: State): np.Array;
+  // Sync or async — device-resident models return directly, paged models
+  // (MoE expert on-demand) return a promise. The session wrapper awaits both.
+  prefill(
+    model: Model,
+    tokenIds: np.Array,
+    state: State,
+  ): np.Array | Promise<np.Array>;
+  step(model: Model, token: number, state: State): np.Array | Promise<np.Array>;
+  /**
+   * Batched draft scoring for speculative verification (optional).
+   * Returns per-token logits; advances state exactly like sequential
+   * steps. Pair with `acceptDraft` / `discardDraft` below.
+   */
+  scoreDrafts?(
+    model: Model,
+    draftIds: np.Array,
+    state: State,
+  ): np.Array | Promise<np.Array>;
+  /** Keep scored state (all drafts accepted). */
+  acceptDraft?(state: State): void;
+  /** Roll back to the pre-score snapshot (draft rejected). */
+  discardDraft?(state: State): void;
 };
 
+/**
+ * Shared session/dispose wrapper so single-file and sharded loads behave
+ * identically. Extracted from `defineChatModel` to avoid duplicating the
+ * lifecycle closure.
+ */
+function buildLoadedChatModel<Model, State>(
+  definition: { id: string; label: string },
+  implementation: {
+    id: string;
+    createState(dtype: np.DType): State;
+    prefill(
+      model: Model,
+      tokenIds: np.Array,
+      state: State,
+    ): np.Array | Promise<np.Array>;
+    step(
+      model: Model,
+      token: number,
+      state: State,
+    ): np.Array | Promise<np.Array>;
+    scoreDrafts?(
+      model: Model,
+      draftIds: np.Array,
+      state: State,
+    ): np.Array | Promise<np.Array>;
+    acceptDraft?(state: State): void;
+    discardDraft?(state: State): void;
+  },
+  model: Model,
+  dtype: np.DType,
+  device: string,
+): LoadedChatModel {
+  let disposed = false;
+
+  return {
+    modelId: definition.id,
+    definition: definition as LoadedChatModel["definition"],
+    device,
+
+    createSession() {
+      if (disposed) throw new Error(`${definition.label} is disposed`);
+      const state = implementation.createState(dtype);
+      let sessionDisposed = false;
+
+      const assertActive = () => {
+        if (sessionDisposed) {
+          throw new Error(`${definition.label} session is disposed`);
+        }
+      };
+
+      return {
+        prefill(tokenIds) {
+          assertActive();
+          return Promise.resolve(
+            implementation.prefill(tree.ref(model), tokenIds, state),
+          );
+        },
+
+        step(token) {
+          assertActive();
+          return Promise.resolve(
+            implementation.step(tree.ref(model), token, state),
+          );
+        },
+
+        ...(implementation.scoreDrafts
+          ? {
+            scoreTokens(draftIds: np.Array) {
+              assertActive();
+              return Promise.resolve(
+                implementation.scoreDrafts!(tree.ref(model), draftIds, state),
+              );
+            },
+            confirmDraft() {
+              assertActive();
+              implementation.acceptDraft?.(state);
+            },
+            truncateDraft() {
+              assertActive();
+              implementation.discardDraft?.(state);
+            },
+          }
+          : {}),
+
+        dispose() {
+          if (sessionDisposed) return;
+          sessionDisposed = true;
+          // Phase 3.0: Dispose paged cache if this is an LFM state
+          if (implementation.id === "lfm2.5-350m") {
+            const lfmState = state as LfmState;
+            if (lfmState.pagedCache) {
+              disposeLfmPagedCache(lfmState);
+            }
+          }
+          tree.dispose(state);
+        },
+      };
+    },
+
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      tree.dispose(model);
+    },
+  };
+}
+/**
+ * Merge parsed shard files into one File (fallback for models without
+ * `loadModelPaged`). Duplicate tensor names across shards are rejected.
+ */
+function mergeShardFiles(
+  modelId: string,
+  files: safetensors.File[],
+): safetensors.File {
+  const merged: safetensors.File = { tensors: {}, totalSize: 0 };
+  for (const f of files) {
+    if (f.metadata && !merged.metadata) merged.metadata = f.metadata;
+    for (const [key, tensor] of Object.entries(f.tensors)) {
+      if (key in merged.tensors) {
+        throw new Error(
+          `Duplicate tensor "${key}" across shards for "${modelId}"`,
+        );
+      }
+      merged.tensors[key] = tensor;
+    }
+    merged.totalSize += f.totalSize;
+  }
+  return merged;
+}
+/**
+ * Incremental sharded-load handle (B2): consume one parsed shard at a
+ * time so peak memory stays near a single shard instead of the full
+ * checkpoint. `finish` hydrates device arrays and returns the model.
+ */
+export type PagedModelStaging<Model> = {
+  stageShard(file: safetensors.File): Promise<void>;
+  finish(device: string): Promise<Model>;
+};
 /**
  * Keeps each model implementation fully typed while exposing a small,
  * type-erased interface to the page.
@@ -198,57 +401,49 @@ function defineChatModel<
         parseSafetensors(data),
         dtype,
       );
-      let disposed = false;
-
-      return {
-        modelId: definition.id,
+      return buildLoadedChatModel(
         definition,
+        implementation,
+        model,
+        dtype,
         device,
-
-        createSession() {
-          if (disposed) throw new Error(`${definition.label} is disposed`);
-          const state = implementation.createState(dtype);
-          let sessionDisposed = false;
-
-          const assertActive = () => {
-            if (sessionDisposed) {
-              throw new Error(`${definition.label} session is disposed`);
-            }
-          };
-
-          return {
-            prefill(tokenIds) {
-              assertActive();
-              return implementation.prefill(tree.ref(model), tokenIds, state);
-            },
-
-            step(token) {
-              assertActive();
-              return implementation.step(tree.ref(model), token, state);
-            },
-
-            dispose() {
-              if (sessionDisposed) return;
-              sessionDisposed = true;
-              // Phase 3.0: Dispose paged cache if this is an LFM state
-              if (implementation.id === "lfm2.5-350m") {
-                const lfmState = state as LfmState;
-                if (lfmState.pagedCache) {
-                  disposeLfmPagedCache(lfmState);
-                }
-              }
-              tree.dispose(state);
-            },
-          };
-        },
-
-        dispose() {
-          if (disposed) return;
-          disposed = true;
-          tree.dispose(model);
-        },
-      };
+      );
     },
+    async loadCheckpointFromFiles(files, dtype, device) {
+      const model = implementation.loadModelPaged
+        ? await implementation.loadModelPaged(files, dtype)
+        : await implementation.loadModel(
+          mergeShardFiles(definition.id, files),
+          dtype,
+        );
+      return buildLoadedChatModel(
+        definition,
+        implementation,
+        model,
+        dtype,
+        device,
+      );
+    },
+    ...(implementation.beginPagedLoad
+      ? {
+        beginPagedLoad: async (dtype: np.DType) => {
+          const staging = await implementation.beginPagedLoad!(dtype);
+          return {
+            stageShard: (file: safetensors.File) => staging.stageShard(file),
+            finish: async (device: string) => {
+              const model = await staging.finish(device);
+              return buildLoadedChatModel(
+                definition,
+                implementation,
+                model,
+                dtype,
+                device,
+              );
+            },
+          };
+        },
+      }
+      : {}),
   };
 
   return definition;
@@ -325,6 +520,9 @@ const lfm: ChatModel<"lfm2.5-350m"> = defineChatModel<
   createState: (dtype) => createLfmState({ dtype }),
   prefill: runLfmPrefill,
   step: runLfmStep,
+  scoreDrafts: runLfmScoreDrafts,
+  acceptDraft: confirmLfmDraft,
+  discardDraft: truncateLfmDraft,
 });
 
 const qwen: ChatModel<"qwen2.5-0.5b"> = defineChatModel<
@@ -485,6 +683,8 @@ const maple: ChatModel<"maple-preview"> = defineChatModel<
   formatPrompt: maplePrompt,
   stopTokens: (tokenizer) => [tokenizer.eosToken],
   loadModel: mapleFromSafetensors,
+  loadModelPaged: (files, dtype) => mapleFromSafetensorsPaged(files, dtype),
+  beginPagedLoad: (dtype) => beginMaplePagedLoad(dtype),
   createState: (dtype) => createMapleState({ dtype }),
   prefill: runMaplePrefill,
   step: runMapleStep,

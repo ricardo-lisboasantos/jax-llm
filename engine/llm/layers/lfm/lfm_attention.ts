@@ -126,6 +126,39 @@ function runAttentionStep(
   return { output, cache: { key, value } };
 }
 
+function runAttentionScore(
+  selfAttn: LfmAttention,
+  cache: LfmAttentionArrays,
+  x: np.Array, // [k, hidden]
+  firstSlot: number,
+  basePosition: number,
+  validBase: number,
+): { output: np.Array; cache: LfmAttentionArrays } {
+  const k = x.shape[0];
+
+  // BISECT (temporary): k sequential proven single-token steps. Batched
+  // QKV+attention replaces this loop once the surrounding pipeline
+  // (snapshot/conv/session) is verified — no speedup in this form.
+  let key = cache.key;
+  let value = cache.value;
+  const outs: np.Array[] = [];
+  for (let i = 0; i < k; i++) {
+    const row = x.ref.slice([i, i + 1], []);
+    const { output, cache: next } = runAttentionStep(
+      selfAttn,
+      { key, value },
+      row,
+      basePosition + i,
+      firstSlot + i,
+      validBase + i + 1,
+    );
+    outs.push(output);
+    key = next.key;
+    value = next.value;
+  }
+  return { output: np.concatenate(outs, 0), cache: { key, value } };
+}
+
 function padAttentionCache(
   key: np.Array,
   value: np.Array,
@@ -177,6 +210,37 @@ export const runAttentionLayerStep = jit(function runAttentionLayerStep(
     position,
     slot,
     validLength,
+  );
+  x = residual.add(output);
+
+  const residual2 = x.ref;
+  x = runMLP(feedForward, runRMSNorm(ffnNorm, x));
+  return [residual2.add(x), updatedCache];
+});
+
+/**
+ * Batched draft-scoring layer pass (PLD verification): one forward over
+ * k drafted tokens against the settled cache. Returns per-token outputs
+ * plus the extended cache. Correctness is defined as exact equality with
+ * k sequential `runAttentionLayerStep` calls (tested live).
+ */
+export const runAttentionLayerScore = jit(function runAttentionLayerScore(
+  { operatorNorm, ffnNorm, feedForward, selfAttn }: LfmAttentionLayer,
+  cache: LfmAttentionArrays,
+  x: np.Array, // [k, hidden]
+  firstSlot: number,
+  basePosition: number,
+  validBase: number,
+): [np.Array, LfmAttentionArrays] {
+  const residual = x.ref;
+  x = runRMSNorm(operatorNorm, x);
+  const { output, cache: updatedCache } = runAttentionScore(
+    selfAttn,
+    cache,
+    x,
+    firstSlot,
+    basePosition,
+    validBase,
   );
   x = residual.add(output);
 

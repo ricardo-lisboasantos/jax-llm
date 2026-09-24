@@ -44,11 +44,11 @@ export type MapleModel = {
   lmHead: MapleLinear;
 };
 
-export function runMaplePrefill(
+export async function runMaplePrefill(
   model: MapleModel,
   tokenIds: np.Array,
   state: MapleState,
-): np.Array {
+): Promise<np.Array> {
   ensureMapleStateCapacity(state, tokenIds.shape[0]);
 
   let x = runEmbedding({ weight: model.wordEmbeddings.weight.ref }, tokenIds);
@@ -68,10 +68,10 @@ export function runMaplePrefill(
       state.capacity,
     );
 
-    // MoE (non-JIT, loops over experts).
+    // MoE (paged on demand when expertStore is present).
     const residual = x.ref;
     const h = runMapleMoENorm(layer, x);
-    const moeOut = runMoE(layer.mlp, h);
+    const moeOut = await runMoE(layer.mlp, h);
     x = residual.add(moeOut);
   }
 
@@ -82,11 +82,11 @@ export function runMaplePrefill(
   return logits;
 }
 
-export function runMapleStep(
+export async function runMapleStep(
   model: MapleModel,
   tokenId: number,
   state: MapleState,
-): np.Array {
+): Promise<np.Array> {
   ensureMapleStateCapacity(state, state.position + 1);
 
   const tokenIds = np.array([tokenId], { dtype: np.uint32 });
@@ -112,10 +112,10 @@ export function runMapleStep(
       useRoPE,
     );
 
-    // MoE (non-JIT, loops over experts).
+    // MoE (paged on demand when expertStore is present).
     const residual = x.ref;
     const h = runMapleMoENorm(layer, x);
-    const moeOut = runMoE(layer.mlp, h);
+    const moeOut = await runMoE(layer.mlp, h);
     x = residual.add(moeOut);
   }
 
