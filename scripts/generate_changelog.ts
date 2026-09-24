@@ -244,6 +244,10 @@ if (import.meta.main) {
     ? bumpVersion(current, bump)
     : current;
   const date = new Date().toISOString().slice(0, 10);
+  if (args["print-version"]) {
+    console.log(version);
+    Deno.exit(0);
+  }
   const commits = await listCommits(from, to);
   const repo = await repoSlug();
   const notes = renderNotes({ version, date, from, to, commits, repo });

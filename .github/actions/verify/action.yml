@@ -1,0 +1,111 @@
+name: Verify
+description: >
+  The single definition of the repo quality gate (DRY: CI, release verify,
+  propose re-verify, and publish verify all run these exact steps).
+  Runs in the caller's workspace — pass a stamped tree to verify stamps.
+
+inputs:
+  deno-version:
+    description: Deno version for denoland/setup-deno.
+    default: v2.x
+  working-directory:
+    description: Directory to run all checks in.
+    default: .
+  run-tests:
+    description: Run the full test suite with coverage ('true'/'false').
+    default: "true"
+  jsr-allow-dirty:
+    description: >
+      Pass --allow-dirty to the JSR dry-run for intentionally uncommitted
+      trees (release stamps). 'true'/'false'.
+    default: "false"
+  coverage-name:
+    description: >
+      Upload the lcov report as a workflow artifact under this name.
+      Empty skips the upload (summary is always rendered).
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Deno
+      id: setup-deno
+      uses: denoland/setup-deno@v2
+      continue-on-error: true
+      with:
+        deno-version: ${{ inputs.deno-version }}
+
+    - name: Setup Deno (fallback installer)
+      # setup-deno downloads from GitHub Releases, which occasionally 504s.
+      # The official installer uses a different CDN (dl.deno.land), so it
+      # survives those outages.
+      if: steps.setup-deno.outcome == 'failure'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        curl -fsSL https://deno.land/install.sh | sh
+        echo "$HOME/.deno/bin" >> "$GITHUB_PATH"
+        deno --version
+
+    - name: Audit dependencies
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: deno audit
+
+    - name: Format check
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: deno fmt --check
+
+    - name: Lint
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: deno lint
+
+    - name: Type check
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: deno check --all
+
+    - name: JSDoc coverage
+      # Project policy (docs/guides/DEVELOPMENT.md): 0 missing-jsdoc allowed.
+      # private-type-ref (slow-types) notices from JAX-JS dependency types
+      # are tracked separately and must not fail this gate.
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        OUT="$(deno doc --lint mod.ts 2>&1)" || true
+        echo "$OUT"
+        if echo "$OUT" | grep -q "error\[missing-jsdoc\]"; then
+          echo "::error::missing JSDoc (0 allowed)"
+          exit 1
+        fi
+
+    - name: Tests with coverage
+      if: inputs.run-tests == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        deno test -A --coverage=cov_profile
+        echo "### Coverage" >> "$GITHUB_STEP_SUMMARY"
+        deno coverage cov_profile >> "$GITHUB_STEP_SUMMARY" || echo "_coverage unavailable_" >> "$GITHUB_STEP_SUMMARY"
+        deno coverage cov_profile --lcov > cov_profile.lcov || true
+
+    - name: Upload coverage
+      if: inputs.run-tests == 'true' && inputs.coverage-name != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.coverage-name }}
+        path: ${{ inputs.working-directory }}/cov_profile.lcov
+        if-no-files-found: ignore
+        retention-days: 30
+
+    - name: JSR dry-run
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        if [[ "${{ inputs.jsr-allow-dirty }}" == "true" ]]; then
+          npx jsr publish --dry-run --allow-dirty
+        else
+          npx jsr publish --dry-run
+        fi

@@ -1,0 +1,48 @@
+name: Bug report
+description: Something is broken or behaves unexpectedly.
+title: "fix: "
+labels: []
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What did you do, and what went wrong?
+      placeholder: ChatEngine.generate() throws on the second call when…
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Minimal steps or snippet to reproduce.
+      placeholder: |
+        ```ts
+        const engine = new ChatEngine("lfm2.5-350m");
+        await engine.init();
+        ```
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Package version (`deno.json`) or JSR version used.
+      placeholder: 0.4.1
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Deno version, OS, backend (webgpu/wasm).
+      placeholder: deno 2.x, macOS arm64, wasm
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues first
+          required: false
+        - label: I can reproduce on `dev`
+          required: false

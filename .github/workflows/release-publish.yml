@@ -64,44 +64,21 @@ jobs:
           fetch-tags: true
           ref: main
 
-      - name: Setup Deno
-        id: setup-deno
-        uses: denoland/setup-deno@v2
-        continue-on-error: true
+      - name: Verify merged tree
+        uses: ./.github/actions/verify
         with:
-          deno-version: v2.x
-
-      - name: Setup Deno (fallback installer)
-        if: steps.setup-deno.outcome == 'failure'
-        run: |
-          curl -fsSL https://deno.land/install.sh | sh
-          echo "$HOME/.deno/bin" >> "$GITHUB_PATH"
-          deno --version
+          coverage-name: coverage-release-v${{ steps.resolve.outputs.version }}
 
       - name: Confirm stamp landed
         run: |
           set -euo pipefail
           VERSION="${{ steps.resolve.outputs.version }}"
-          ACTUAL="$(deno eval 'console.log(JSON.parse(await Deno.readTextFile("deno.json")).version)')"
+          ACTUAL="$(deno eval --allow-read 'console.log(JSON.parse(await Deno.readTextFile("deno.json")).version)')"
           if [[ "$ACTUAL" != "$VERSION" ]]; then
             echo "::error::deno.json on main is $ACTUAL, expected $VERSION — refusing to publish"
             exit 1
           fi
           test -f "docs/releases/v$VERSION.md" || { echo "::error::missing docs/releases/v$VERSION.md"; exit 1; }
-
-      - name: Verify merged tree
-        run: |
-          deno fmt --check
-          deno lint
-          deno check --all
-          OUT="$(deno doc --lint mod.ts 2>&1)" || true
-          echo "$OUT"
-          if echo "$OUT" | grep -q "error\[missing-jsdoc\]"; then
-            echo "::error::missing JSDoc (0 allowed)"
-            exit 1
-          fi
-          deno test -A
-          npx jsr publish --dry-run
 
       - name: Generate manifest
         run: |
@@ -124,7 +101,9 @@ jobs:
           git push origin "v$VERSION"
 
       - name: Publish to JSR
-        run: npx jsr publish
+        # --allow-dirty: only the untracked release-manifest.json is extra;
+        # the published file set is fixed by deno.json `publish.include`.
+        run: npx jsr publish --allow-dirty
 
       - name: Create GitHub Release
         run: |

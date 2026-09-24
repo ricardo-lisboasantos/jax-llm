@@ -21,6 +21,8 @@ cutting a release.
   required, no direct pushes, no deletions, no force-pushes — enforced for
   admins too). `dev` reaches `main` via pull request; release stamps land via a
   `release/vX.Y.Z` pull request. Never commit directly to `main`.
+- After any push to `main`, `sync-dev` merges it back into `dev` automatically
+  (release stamps included), so the branches never diverge.
 
 ## The Release button (standard path)
 

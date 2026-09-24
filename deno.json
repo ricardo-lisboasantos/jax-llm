@@ -27,7 +27,8 @@
     "release:preview": "deno run -A scripts/generate_changelog.ts --bump patch",
     "release:preview:minor": "deno run -A scripts/generate_changelog.ts --bump minor",
     "release:preview:major": "deno run -A scripts/generate_changelog.ts --bump major",
-    "changelog": "deno run -A scripts/generate_changelog.ts"
+    "changelog": "deno run -A scripts/generate_changelog.ts",
+    "verify": "deno fmt --check && deno lint && deno check --all && deno audit && deno task test:unit"
   },
   "imports": {
     "@jax-js/jax": "npm:@jax-js/jax@^0.1.25",
