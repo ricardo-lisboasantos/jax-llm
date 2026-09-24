@@ -1,0 +1,154 @@
+name: Release publish
+
+# Publishes a release AFTER its `release/vX.Y.Z` proposal PR merges to main.
+# Trigger: pull request to main with the `release` label, merged (any method).
+# A `pre-release` label on the same PR marks the GitHub Release accordingly.
+#
+# Steps: resolve version from the head branch → verify the merged tree →
+# push tag vX.Y.Z → publish to JSR (OIDC, no token) → create GitHub Release.
+#
+# Safety:
+# - Runs only in the canonical repo (no publishing from forks).
+# - Refuses unless deno.json on main already carries the proposed version
+#   (i.e. the merge actually delivered the stamp commit).
+# - Tag push is idempotent; JSR republish of an existing version is a no-op.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+concurrency:
+  group: release-publish-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    name: Publish release
+    if: >-
+      github.repository == 'ricardo-lisboasantos/jax-llm' &&
+      github.event.pull_request.merged == true &&
+      contains(github.event.pull_request.labels.*.name, 'release')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Resolve version
+        id: resolve
+        run: |
+          set -euo pipefail
+          HEAD_REF="${{ github.event.pull_request.head.ref }}"
+          if [[ "$HEAD_REF" =~ ^release/v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          else
+            echo "::error::release PR head must be release/vX.Y.Z, got: $HEAD_REF"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [[ "${{ contains(github.event.pull_request.labels.*.name, 'pre-release') }}" == "true" ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Publishing v$VERSION"
+
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          ref: main
+
+      - name: Setup Deno
+        id: setup-deno
+        uses: denoland/setup-deno@v2
+        continue-on-error: true
+        with:
+          deno-version: v2.x
+
+      - name: Setup Deno (fallback installer)
+        if: steps.setup-deno.outcome == 'failure'
+        run: |
+          curl -fsSL https://deno.land/install.sh | sh
+          echo "$HOME/.deno/bin" >> "$GITHUB_PATH"
+          deno --version
+
+      - name: Confirm stamp landed
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.resolve.outputs.version }}"
+          ACTUAL="$(deno eval 'console.log(JSON.parse(await Deno.readTextFile("deno.json")).version)')"
+          if [[ "$ACTUAL" != "$VERSION" ]]; then
+            echo "::error::deno.json on main is $ACTUAL, expected $VERSION — refusing to publish"
+            exit 1
+          fi
+          test -f "docs/releases/v$VERSION.md" || { echo "::error::missing docs/releases/v$VERSION.md"; exit 1; }
+
+      - name: Verify merged tree
+        run: |
+          deno fmt --check
+          deno lint
+          deno check --all
+          OUT="$(deno doc --lint mod.ts 2>&1)" || true
+          echo "$OUT"
+          if echo "$OUT" | grep -q "error\[missing-jsdoc\]"; then
+            echo "::error::missing JSDoc (0 allowed)"
+            exit 1
+          fi
+          deno test -A
+          npx jsr publish --dry-run
+
+      - name: Generate manifest
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.resolve.outputs.version }}"
+          PREV_TAG="$(git tag --list 'v*' --sort=-v:refname | head -n 1 || true)"
+          FROM_ARG=()
+          if [[ -n "$PREV_TAG" ]]; then FROM_ARG=(--from "$PREV_TAG"); fi
+          deno run -A scripts/generate_changelog.ts "${FROM_ARG[@]}" --to HEAD \
+            --version "$VERSION" --manifest release-manifest.json
+
+      - name: Push tag
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.resolve.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "v$VERSION" -m "Release v$VERSION" || echo "tag exists"
+          git push origin "v$VERSION"
+
+      - name: Publish to JSR
+        run: npx jsr publish
+
+      - name: Create GitHub Release
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.resolve.outputs.version }}"
+          ARGS=(--title "v$VERSION" --notes-file "docs/releases/v$VERSION.md" "docs/releases/v$VERSION.md" release-manifest.json CHANGELOG.md)
+          if [[ "${{ steps.resolve.outputs.prerelease }}" == "true" ]]; then
+            ARGS+=(--prerelease)
+          fi
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            gh release upload "v$VERSION" "docs/releases/v$VERSION.md" release-manifest.json CHANGELOG.md --clobber
+          else
+            gh release create "v$VERSION" "${ARGS[@]}"
+          fi
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-v${{ steps.resolve.outputs.version }}
+          path: |
+            release-manifest.json
+            CHANGELOG.md
+            docs/releases/v${{ steps.resolve.outputs.version }}.md
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Done
+        run: |
+          echo "### Shipped v${{ steps.resolve.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- JSR: https://jsr.io/@ricardo/jax-llm@${{ steps.resolve.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Release: https://github.com/${{ github.repository }}/releases/tag/v${{ steps.resolve.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"

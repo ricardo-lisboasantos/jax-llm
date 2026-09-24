@@ -29,8 +29,9 @@ Defined in `deno.json`:
 
 ## CI/CD
 
-Defined in `.github/workflows/`. Triggers on every push, every pull request, and
-manually via `workflow_dispatch`.
+Defined in `.github/workflows/`. Branch model: `dev` for development, `main` for
+production only. CI triggers on pushes to `main`/`dev`, pull requests targeting
+either, and manually via `workflow_dispatch`.
 
 - `ci.yml` — verification only, never publishes:
   1. `conventional` (PRs): PR title must be a conventional commit.
@@ -41,12 +42,17 @@ manually via `workflow_dispatch`.
   4. `publish-dry-run` (needs check + test): `npx jsr publish --dry-run` so JSR
      breakages surface on PRs.
   5. `gate`: single pass/fail summary pointing at the Release workflow.
-- `release.yml` — the **Release button** (Actions → Release → Run workflow):
-  `plan` (resolve version, gather commits since last tag, render notes) →
-  `verify` (full gate) → `publish` (stamp `deno.json` + `CHANGELOG.md` +
-  `docs/releases/vX.Y.Z.md`, `npx jsr publish` via OIDC, push tag, create GitHub
-  Release with notes + manifest artifacts). Supports `dry_run` previews and
-  `v*.*.*` tag pushes. Full process: `docs/guides/RELEASING.md`.
+- `release.yml` — the **Release button** (Actions → Release → Use workflow from
+  `main` → Run workflow; refuses any other branch): `plan` (resolve version,
+  gather commits since last tag, render notes) → `verify` (full gate on `main`)
+  → `propose` (stamp `deno.json` + `CHANGELOG.md` + `docs/releases/vX.Y.Z.md`,
+  open a `release/vX.Y.Z` PR labeled `release`). Supports `dry_run` previews.
+  Full process: `docs/guides/RELEASING.md`.
+- `release-publish.yml` — runs when a `release`-labeled PR merges to `main`:
+  verifies the merged tree (including the `deno.json` version match), pushes the
+  `vX.Y.Z` tag, `npx jsr publish` via OIDC, creates the GitHub Release with
+  notes + manifest artifacts. Forks excluded; no direct pushes required, so
+  `main` stays fully branch-protected.
 
 ## Documentation coverage
 

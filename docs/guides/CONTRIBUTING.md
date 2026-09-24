@@ -59,7 +59,13 @@ deno test -A tests/issue_1_memory_leak_test.ts
 
 ### 1. Create a Branch
 
+Branch from `dev` (`main` is production only — it receives `dev` via pull
+request and version-stamp commits from the Release workflow):
+
 ```bash
+# Update your local dev first
+git checkout dev && git pull
+
 # Create feature branch
 git checkout -b feat/short-description
 # or bugfix
@@ -128,7 +134,9 @@ git commit -m "type(scope): description"
 # Push to remote
 git push origin feat/short-description
 
-# Create pull request on GitHub
+# Create pull request on GitHub targeting `dev`
+# (promotion `dev` → `main` is a separate PR; releases ship from `main`
+# via the Release workflow — see RELEASING.md)
 # Use template below
 ```
 

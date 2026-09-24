@@ -7,7 +7,9 @@ name: CI
 
 on:
   push:
+    branches: [main, dev]
   pull_request:
+    branches: [main, dev]
   workflow_dispatch:
 
 concurrency:
@@ -163,19 +165,24 @@ jobs:
     name: CI gate
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [check, test, publish-dry-run]
+    # `conventional` only runs on pull_request; on pushes it is skipped,
+    # which the gate treats as pass (see script below).
+    needs: [conventional, check, test, publish-dry-run]
     if: always()
     steps:
       - name: Gate summary
         run: |
           echo "## CI gate" >> "$GITHUB_STEP_SUMMARY"
+          echo "- conventional: ${{ needs.conventional.result }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- check: ${{ needs.check.result }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- test: ${{ needs.test.result }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- publish-dry-run: ${{ needs.publish-dry-run.result }}" >> "$GITHUB_STEP_SUMMARY"
-          if [ "${{ needs.check.result }}" != "success" ] || \
+          CONV="${{ needs.conventional.result }}"
+          if { [ "$CONV" != "success" ] && [ "$CONV" != "skipped" ]; } || \
+             [ "${{ needs.check.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ] || \
              [ "${{ needs.publish-dry-run.result }}" != "success" ]; then
             echo "❌ CI gate failed." >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
-          echo "✅ All checks passed. Release via Actions → Release → Run workflow." >> "$GITHUB_STEP_SUMMARY"
+          echo "✅ All checks passed. Promote dev → main via PR, then release via Actions → Release → Run workflow (from main)." >> "$GITHUB_STEP_SUMMARY"

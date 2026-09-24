@@ -14,24 +14,37 @@ cutting a release.
   per-release narrative in `docs/releases/vX.Y.Z.md`. Both are generated from
   conventional commits — do not hand-edit release sections.
 
+## Branch model
+
+- `dev` — day-to-day development. All feature/fix branches target `dev`.
+- `main` — production only, branch-protected (pull request + green `CI gate`
+  required, no direct pushes, no deletions, no force-pushes — enforced for
+  admins too). `dev` reaches `main` via pull request; release stamps land via a
+  `release/vX.Y.Z` pull request. Never commit directly to `main`.
+
 ## The Release button (standard path)
 
-1. GitHub → **Actions** → **Release** → **Run workflow**.
-2. Pick inputs:
+Releasing is two stages — propose, then merge to publish:
+
+1. Merge `dev` → `main` via pull request (CI must be green on both sides).
+2. GitHub → **Actions** → **Release** → **Use workflow from: `main`** → **Run
+   workflow** (the workflow refuses to run from any other branch).
+3. Pick inputs:
    - `bump`: `patch` | `minor` | `major` | `explicit`.
    - `version`: required only for `explicit` (e.g. `0.5.0`).
-   - `dry_run`: `true` first when unsure — runs plan + verify + stamping,
-     uploads the notes as artifacts, and stops before JSR/tag/Release.
-   - `prerelease`: marks the GitHub Release as pre-release.
-3. Watch the run **Summary**:
-   - `Plan release` shows resolved version, previous tag, and full notes.
-   - `Verify` must be green (fmt, lint, types, docs, tests, JSR dry-run).
-   - `Publish` stamps files, publishes to JSR via OIDC (no stored token), pushes
-     the `chore(release): vX.Y.Z` commit + `vX.Y.Z` tag, and creates the GitHub
-     Release with `NOTES.md`, `release-manifest.json`, and `CHANGELOG.md`
-     attached.
-4. After merge-back: `deno.json`, `CHANGELOG.md`, and `docs/releases/vX.Y.Z.md`
-   on `main` already reflect the release. Nothing else to do manually.
+   - `dry_run`: `true` first when unsure — runs plan + verify + stamping and
+     stops before opening the release PR.
+   - `prerelease`: adds the `pre-release` label so the eventual GitHub Release
+     is marked pre-release.
+4. The run opens a `release/vX.Y.Z` pull request to `main` (label: `release`)
+   with the generated changelog as its body. CI runs the full gate on it.
+5. Review and **merge** the release PR. Merging triggers `release-publish`,
+   which verifies the merged tree, pushes the `vX.Y.Z` tag, publishes to JSR via
+   OIDC (no stored token), and creates the GitHub Release with
+   `docs/releases/vX.Y.Z.md`, `release-manifest.json`, and `CHANGELOG.md`
+   attached.
+6. After merge: `deno.json`, `CHANGELOG.md`, and `docs/releases/vX.Y.Z.md` on
+   `main` already reflect the release. Nothing else to do manually.
 
 Outputs:
 
@@ -42,17 +55,19 @@ Outputs:
 | Manifest               | `release-manifest.json` (version, SHAs, subjects) |
 | Workflow artifacts     | Actions run → Artifacts (90-day retention)        |
 
-## Tag-driven releases (alternative)
+## Rules
 
-Pushing a `v*.*.*` tag runs the same pipeline pinned to that version:
-
-```bash
-git tag -a v0.5.0 -m "Release v0.5.0"
-git push origin v0.5.0
-```
-
-No bump commit is pushed in this mode — make sure `deno.json` already carries
-the tagged version, otherwise JSR and the tag disagree.
+- Never publish from a laptop — only `release-publish` (triggered by merging a
+  `release/` PR) publishes to JSR. This keeps OIDC provenance, changelog, tag,
+  and release notes consistent.
+- Never push a `v*` tag manually — tags are created by `release-publish` after
+  the stamp merge. A manually pushed tag publishes nothing.
+- Never hand-edit a published `CHANGELOG.md` section or `docs/releases/v*` file
+  — fix forward in the next release.
+- Every PR title must be a conventional commit (`feat: …`, `fix(scope): …`); CI
+  lints this and the changelog groups depend on it.
+- `main` is always releasable: CI runs the full gate plus a JSR dry-run on every
+  push and PR.
 
 ## Local preview (same generator CI uses)
 
