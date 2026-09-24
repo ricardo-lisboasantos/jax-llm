@@ -30,29 +30,41 @@ Defined in `deno.json`:
 ## CI/CD
 
 Defined in `.github/workflows/`. Branch model: `dev` for development, `main` for
-production only. CI triggers on pushes to `main`/`dev`, pull requests targeting
-either, and manually via `workflow_dispatch`.
+production only (branch-protected: pull request + green `CI gate` required, no
+direct pushes, no deletions, enforced for admins). CI triggers on pushes to
+`main`/`dev`, pull requests targeting either, and manually via
+`workflow_dispatch`.
+
+Pipeline layout (all `ubuntu-latest` per the cost guard):
 
 - `ci.yml` — verification only, never publishes:
   1. `conventional` (PRs): PR title must be a conventional commit.
-  2. `check`: `deno fmt --check`, `deno lint`, `deno check --all`,
-     `deno doc --lint mod.ts`.
-  3. `test`: unit tests, full `deno test -A`, coverage uploaded as an artifact
-     and summarized in the run.
-  4. `publish-dry-run` (needs check + test): `npx jsr publish --dry-run` so JSR
-     breakages surface on PRs.
-  5. `gate`: single pass/fail summary pointing at the Release workflow.
+  2. `cost-guard`: every workflow must use stock `ubuntu-latest` runners.
+  3. `verify`: the shared gate (`.github/actions/verify`) — `deno audit`,
+     `fmt --check`, `lint`, `check --all`, JSDoc `missing-jsdoc` only, full
+     `deno test -A` with coverage artifact, `npx jsr publish --dry-run`.
+  4. `gate` (`CI gate`, the required check): single pass/fail summary.
 - `release.yml` — the **Release button** (Actions → Release → Use workflow from
   `main` → Run workflow; refuses any other branch): `plan` (resolve version,
-  gather commits since last tag, render notes) → `verify` (full gate on `main`)
-  → `propose` (stamp `deno.json` + `CHANGELOG.md` + `docs/releases/vX.Y.Z.md`,
-  open a `release/vX.Y.Z` PR labeled `release`). Supports `dry_run` previews.
-  Full process: `docs/guides/RELEASING.md`.
+  gather commits since last tag, render notes) → `verify` (shared gate on
+  `main`) → `propose` (stamp `deno.json` + `CHANGELOG.md` +
+  `docs/releases/vX.Y.Z.md`, re-verify the stamp without the test suite, open a
+  `release/vX.Y.Z` PR labeled `release`). Supports `dry_run` previews. Full
+  process: `docs/guides/RELEASING.md`.
 - `release-publish.yml` — runs when a `release`-labeled PR merges to `main`:
-  verifies the merged tree (including the `deno.json` version match), pushes the
-  `vX.Y.Z` tag, `npx jsr publish` via OIDC, creates the GitHub Release with
-  notes + manifest artifacts. Forks excluded; no direct pushes required, so
-  `main` stays fully branch-protected.
+  shared gate on the merged tree (including the `deno.json` version match),
+  pushes the `vX.Y.Z` tag, `npx jsr publish` via OIDC, creates the GitHub
+  Release with notes + manifest artifacts. Forks excluded; no direct pushes
+  required, so `main` stays fully branch-protected.
+- `sync-dev.yml` — on every push to `main`, merges `main` back into `dev`
+  (version stamps and hotfixes flow back automatically); opens a `sync` PR on
+  conflict instead of failing silently.
+
+The gate sequence is defined once in `.github/actions/verify` and reused by CI
+and all release jobs — fix it there, not in each workflow. Least privilege:
+top-level permissions are read-only; jobs grant only what they need
+(`contents:write` for pushes and artifact uploads, `pull-requests:write` for PR
+creation, `id-token:write` for JSR publishing).
 
 ## Documentation coverage
 
