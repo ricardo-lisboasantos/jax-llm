@@ -253,9 +253,9 @@ checklist.
 CI (`.github/workflows/ci.yml`) verifies every push and PR (`fmt --check`,
 `lint`, `check --all`, `doc --lint`, `test -A`, JSR dry-run) and never publishes
 — see [docs/guides/DEVELOPMENT.md](docs/guides/DEVELOPMENT.md#cicd). Releases
-ship from the **Release button** (Actions → Release → Run workflow), which
-gathers commits since the last tag, generates the changelog, publishes to JSR,
-and cuts a GitHub Release — see
+ship from the **Release button** (Actions → Release → Use workflow from `main` →
+Run workflow), which gathers commits since the last tag, generates the
+changelog, publishes to JSR, and cuts a GitHub Release — see
 [docs/guides/RELEASING.md](docs/guides/RELEASING.md) and
 [CHANGELOG.md](CHANGELOG.md).
 

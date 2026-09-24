@@ -14,23 +14,32 @@ cutting a release.
   per-release narrative in `docs/releases/vX.Y.Z.md`. Both are generated from
   conventional commits — do not hand-edit release sections.
 
+## Branch model
+
+- `dev` — day-to-day development. All feature/fix branches target `dev`.
+- `main` — production only. `dev` reaches `main` via pull request, and only the
+  `Release` workflow writes to `main` otherwise (version-stamp commit + tag).
+  Never commit directly to `main`.
+
 ## The Release button (standard path)
 
-1. GitHub → **Actions** → **Release** → **Run workflow**.
-2. Pick inputs:
+1. Merge `dev` → `main` via pull request (CI must be green on both sides).
+2. GitHub → **Actions** → **Release** → **Use workflow from: `main`** → **Run
+   workflow** (the workflow refuses to run from any other branch).
+3. Pick inputs:
    - `bump`: `patch` | `minor` | `major` | `explicit`.
    - `version`: required only for `explicit` (e.g. `0.5.0`).
    - `dry_run`: `true` first when unsure — runs plan + verify + stamping,
      uploads the notes as artifacts, and stops before JSR/tag/Release.
    - `prerelease`: marks the GitHub Release as pre-release.
-3. Watch the run **Summary**:
+4. Watch the run **Summary**:
    - `Plan release` shows resolved version, previous tag, and full notes.
    - `Verify` must be green (fmt, lint, types, docs, tests, JSR dry-run).
    - `Publish` stamps files, publishes to JSR via OIDC (no stored token), pushes
      the `chore(release): vX.Y.Z` commit + `vX.Y.Z` tag, and creates the GitHub
      Release with `NOTES.md`, `release-manifest.json`, and `CHANGELOG.md`
      attached.
-4. After merge-back: `deno.json`, `CHANGELOG.md`, and `docs/releases/vX.Y.Z.md`
+5. After merge-back: `deno.json`, `CHANGELOG.md`, and `docs/releases/vX.Y.Z.md`
    on `main` already reflect the release. Nothing else to do manually.
 
 Outputs:

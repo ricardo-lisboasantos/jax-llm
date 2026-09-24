@@ -7,7 +7,9 @@ name: CI
 
 on:
   push:
+    branches: [main, dev]
   pull_request:
+    branches: [main, dev]
   workflow_dispatch:
 
 concurrency:
@@ -178,4 +180,4 @@ jobs:
             echo "❌ CI gate failed." >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
-          echo "✅ All checks passed. Release via Actions → Release → Run workflow." >> "$GITHUB_STEP_SUMMARY"
+          echo "✅ All checks passed. Promote dev → main via PR, then release via Actions → Release → Run workflow (from main)." >> "$GITHUB_STEP_SUMMARY"

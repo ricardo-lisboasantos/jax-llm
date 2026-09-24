@@ -1,7 +1,9 @@
 name: Release
 
 # One-click release ("Release button"):
-#   GitHub → Actions → Release → Run workflow → pick a version bump.
+#   GitHub → Actions → Release → **Use workflow from: main** → Run workflow
+#   → pick a version bump. Releases run from main ONLY (production branch);
+#   development happens on dev and reaches main via pull request.
 #
 # What it does, in order (every step is visible in the run Summary):
 #   1. plan    — resolve previous tag + next version, gather commits since
@@ -71,10 +73,21 @@ jobs:
       dry_run: ${{ steps.resolve.outputs.dry_run }}
       prerelease: ${{ steps.resolve.outputs.prerelease }}
     steps:
+      - name: Guard release source
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then exit 0; fi
+          if [[ "${{ github.ref }}" != "refs/heads/main" ]]; then
+            echo "::error::Releases must run from main (Use workflow from: main). Current: ${{ github.ref }}"
+            exit 1
+          fi
+
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           fetch-tags: true
+          # Manual runs execute against main even if triggered from another
+          # branch selector; tag pushes check out the tag itself.
+          ref: ${{ github.ref_type == 'tag' && github.ref || 'main' }}
 
       - name: Setup Deno
         id: setup-deno
@@ -148,6 +161,10 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Verify exactly what would ship: main on manual runs, the tag itself
+          # on tag pushes.
+          ref: ${{ github.ref_type == 'tag' && github.ref || 'main' }}
 
       - name: Setup Deno
         id: setup-deno
