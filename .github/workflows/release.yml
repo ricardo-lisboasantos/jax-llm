@@ -59,10 +59,9 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+# Least privilege: plan/verify only read; propose gets write scopes below.
 permissions:
-  contents: write
-  id-token: write
-  pull-requests: write
+  contents: read
 
 jobs:
   plan:
@@ -115,7 +114,7 @@ jobs:
             if [[ -z "$EXPLICIT" ]]; then echo "::error::bump=explicit requires the version input"; exit 1; fi
             VERSION="${EXPLICIT#v}"
           else
-            VERSION="$(deno run -A scripts/generate_changelog.ts --bump "$BUMP" 2>/dev/null | head -1 | sed 's/^## v//; s/ —.*//')"
+            VERSION="$(deno run -A scripts/generate_changelog.ts --bump "$BUMP" --print-version)"
             if [[ -z "$VERSION" ]]; then echo "::error::could not resolve bumped version"; exit 1; fi
           fi
           if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -157,51 +156,15 @@ jobs:
     needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
         with:
           # Verify exactly what would ship: main.
           ref: main
-
-      - name: Setup Deno
-        id: setup-deno
-        uses: denoland/setup-deno@v2
-        continue-on-error: true
-        with:
-          deno-version: v2.x
-
-      - name: Setup Deno (fallback installer)
-        if: steps.setup-deno.outcome == 'failure'
-        run: |
-          curl -fsSL https://deno.land/install.sh | sh
-          echo "$HOME/.deno/bin" >> "$GITHUB_PATH"
-          deno --version
-
-      - name: Format check
-        run: deno fmt --check
-
-      - name: Lint
-        run: deno lint
-
-      - name: Type check
-        run: deno check --all
-
-      - name: JSDoc coverage
-        # 0 missing-jsdoc allowed; private-type-ref (slow-types) notices
-        # from JAX-JS dependency types are tracked separately.
-        run: |
-          OUT="$(deno doc --lint mod.ts 2>&1)" || true
-          echo "$OUT"
-          if echo "$OUT" | grep -q "error\[missing-jsdoc\]"; then
-            echo "::error::missing JSDoc (0 allowed)"
-            exit 1
-          fi
-
-      - name: Tests
-        run: deno test -A
-
-      - name: JSR dry-run
-        run: npx jsr publish --dry-run
+      - name: Verify
+        uses: ./.github/actions/verify
 
   propose:
     name: Propose v${{ needs.plan.outputs.version }}
@@ -257,19 +220,13 @@ jobs:
           cat NOTES.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Re-verify stamped tree
-        run: |
-          deno fmt --check
-          deno lint
-          deno check --all
-          OUT="$(deno doc --lint mod.ts 2>&1)" || true
-          echo "$OUT"
-          if echo "$OUT" | grep -q "error\[missing-jsdoc\]"; then
-            echo "::error::missing JSDoc (0 allowed)"
-            exit 1
-          fi
-          # --allow-dirty: the stamp files are intentionally uncommitted here;
-          # they get committed into the release PR below.
-          npx jsr publish --dry-run --allow-dirty
+        # Tests already ran on this tree in `verify`; the stamp only touches
+        # version/changelog files, so re-run everything except the suite.
+        # --allow-dirty: stamp files are intentionally uncommitted here.
+        uses: ./.github/actions/verify
+        with:
+          run-tests: "false"
+          jsr-allow-dirty: "true"
 
       - name: Open release PR
         if: needs.plan.outputs.dry_run != 'true'
