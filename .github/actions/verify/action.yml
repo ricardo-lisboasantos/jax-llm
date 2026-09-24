@@ -93,7 +93,7 @@ runs:
 
     - name: Upload coverage
       if: inputs.run-tests == 'true' && inputs.coverage-name != ''
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: ${{ inputs.coverage-name }}
         path: ${{ inputs.working-directory }}/cov_profile.lcov
