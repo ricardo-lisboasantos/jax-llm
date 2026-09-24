@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Assert standard runners only
         # The `:[0-9]+:` filter matches real `runs-on:` YAML keys only, not
         # these script lines mentioning the pattern.
@@ -48,7 +48,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Lint PR title
-        uses: amannn/action-semantic-pull-request@v5
+        uses: amannn/action-semantic-pull-request@v6
         with:
           types: |
             feat
@@ -73,7 +73,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Verify
         uses: ./.github/actions/verify
         with:
