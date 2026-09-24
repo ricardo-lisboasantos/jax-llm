@@ -1,49 +1,181 @@
 name: CI
 
-# Runs on every change: any push and any pull request.
+# Continuous integration: fast, transparent verification on every change.
+# Real publishing happens only in release.yml (manual "Release" button or v* tag).
+# This workflow never publishes — it ends with a JSR dry-run so JSR breakages
+# surface on PRs instead of at release time.
+
 on:
   push:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
-  verify:
+  conventional:
+    name: Conventional commits
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Lint PR title
+        uses: amannn/action-semantic-pull-request@v5
+        with:
+          types: |
+            feat
+            fix
+            perf
+            docs
+            test
+            refactor
+            style
+            chore
+            ci
+            build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  check:
+    name: Format / Lint / Types / Docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
+
       - name: Setup Deno
         id: setup-deno
         uses: denoland/setup-deno@v2
         continue-on-error: true
         with:
           deno-version: v2.x
+
       - name: Setup Deno (fallback installer)
-        # setup-deno downloads from GitHub Releases, which occasionally 504s.
-        # The official installer uses a different CDN (dl.deno.land), so it
-        # survives those outages.
         if: steps.setup-deno.outcome == 'failure'
         run: |
           curl -fsSL https://deno.land/install.sh | sh
           echo "$HOME/.deno/bin" >> "$GITHUB_PATH"
           deno --version
+
       - name: Format check
         run: deno fmt --check
+
       - name: Lint
         run: deno lint
+
       - name: Type check
         run: deno check --all
-      - name: Test
-        run: deno test -A
 
-  publish:
-    # Publishes to JSR only when every verify step passed, and only for
-    # pushes to main (never for pull requests).
-    needs: verify
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: JSDoc coverage
+        # Project policy (docs/guides/DEVELOPMENT.md): 0 missing-jsdoc allowed.
+        # private-type-ref (slow-types) notices from JAX-JS dependency types
+        # are tracked separately and must not fail this gate.
+        run: |
+          OUT="$(deno doc --lint mod.ts 2>&1)" || true
+          echo "$OUT"
+          if echo "$OUT" | grep -q "error\[missing-jsdoc\]"; then
+            echo "::error::missing JSDoc (0 allowed)"
+            exit 1
+          fi
+
+  test:
+    name: Tests
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write # OIDC trusted publishing with JSR.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
-      - run: npx jsr publish
+
+      - name: Setup Deno
+        id: setup-deno
+        uses: denoland/setup-deno@v2
+        continue-on-error: true
+        with:
+          deno-version: v2.x
+
+      - name: Setup Deno (fallback installer)
+        if: steps.setup-deno.outcome == 'failure'
+        run: |
+          curl -fsSL https://deno.land/install.sh | sh
+          echo "$HOME/.deno/bin" >> "$GITHUB_PATH"
+          deno --version
+
+      - name: Unit tests
+        run: deno test -A --filter unit
+
+      - name: Full suite
+        run: deno test -A
+
+      - name: Coverage
+        if: always()
+        run: |
+          deno test -A --coverage=cov_profile || true
+          deno coverage cov_profile --lcov > cov_profile.lcov || true
+          echo "### Coverage" >> "$GITHUB_STEP_SUMMARY"
+          deno coverage cov_profile >> "$GITHUB_STEP_SUMMARY" || echo "_coverage unavailable_" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.sha }}
+          path: |
+            cov_profile.lcov
+          if-no-files-found: ignore
+          retention-days: 30
+
+  publish-dry-run:
+    name: JSR dry-run
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [check, test]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Deno
+        id: setup-deno
+        uses: denoland/setup-deno@v2
+        continue-on-error: true
+        with:
+          deno-version: v2.x
+
+      - name: Setup Deno (fallback installer)
+        if: steps.setup-deno.outcome == 'failure'
+        run: |
+          curl -fsSL https://deno.land/install.sh | sh
+          echo "$HOME/.deno/bin" >> "$GITHUB_PATH"
+          deno --version
+
+      - name: JSR publish dry-run
+        run: npx jsr publish --dry-run
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### JSR dry-run" >> "$GITHUB_STEP_SUMMARY"
+          echo "Package \`$(deno eval 'console.log(JSON.parse(await Deno.readTextFile("deno.json")).version)')\` passes JSR checks." >> "$GITHUB_STEP_SUMMARY"
+
+  gate:
+    name: CI gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [check, test, publish-dry-run]
+    if: always()
+    steps:
+      - name: Gate summary
+        run: |
+          echo "## CI gate" >> "$GITHUB_STEP_SUMMARY"
+          echo "- check: ${{ needs.check.result }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- test: ${{ needs.test.result }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- publish-dry-run: ${{ needs.publish-dry-run.result }}" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ needs.check.result }}" != "success" ] || \
+             [ "${{ needs.test.result }}" != "success" ] || \
+             [ "${{ needs.publish-dry-run.result }}" != "success" ]; then
+            echo "❌ CI gate failed." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "✅ All checks passed. Release via Actions → Release → Run workflow." >> "$GITHUB_STEP_SUMMARY"

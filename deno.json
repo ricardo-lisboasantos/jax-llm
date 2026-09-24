@@ -23,7 +23,11 @@
     "typecheck": "deno run https://deno.land/std@0.224.0/tsc.ts --no-error-on-deprecated",
     "build": "deno bundle --no-export-maps main.ts dist/bundle.js",
     "start": "deno run -A main.ts",
-    "bench": "deno test --unstable-kv --unstable-webgpu --allow-read --allow-write --allow-env --allow-net --filter bench"
+    "bench": "deno test --unstable-kv --unstable-webgpu --allow-read --allow-write --allow-env --allow-net --filter bench",
+    "release:preview": "deno run -A scripts/generate_changelog.ts --bump patch",
+    "release:preview:minor": "deno run -A scripts/generate_changelog.ts --bump minor",
+    "release:preview:major": "deno run -A scripts/generate_changelog.ts --bump major",
+    "changelog": "deno run -A scripts/generate_changelog.ts"
   },
   "imports": {
     "@jax-js/jax": "npm:@jax-js/jax@^0.1.25",

@@ -29,20 +29,24 @@ Defined in `deno.json`:
 
 ## CI/CD
 
-Defined in `.github/workflows/ci.yml`. Triggers on every push, every pull
-request, and manually via `workflow_dispatch`.
+Defined in `.github/workflows/`. Triggers on every push, every pull request, and
+manually via `workflow_dispatch`.
 
-- `verify` job (Deno v2.x via `denoland/setup-deno@v2`), steps run in order and
-  stop on first failure:
-  1. `deno fmt --check` — formatting must already be clean (run `deno fmt`
-     locally).
-  2. `deno lint`.
-  3. `deno check --all` — full type check.
-  4. `deno test -A` — entire suite, including the network integration test.
-- `publish` job (`needs: verify`, only for pushes to `main`, never PRs):
-  `npx jsr publish` using OIDC trusted publishing (`id-token: write`), so no
-  token is stored in repo secrets. Republishing an unchanged version is a
-  harmless no-op (`jsr` reports "already published").
+- `ci.yml` — verification only, never publishes:
+  1. `conventional` (PRs): PR title must be a conventional commit.
+  2. `check`: `deno fmt --check`, `deno lint`, `deno check --all`,
+     `deno doc --lint mod.ts`.
+  3. `test`: unit tests, full `deno test -A`, coverage uploaded as an artifact
+     and summarized in the run.
+  4. `publish-dry-run` (needs check + test): `npx jsr publish --dry-run` so JSR
+     breakages surface on PRs.
+  5. `gate`: single pass/fail summary pointing at the Release workflow.
+- `release.yml` — the **Release button** (Actions → Release → Run workflow):
+  `plan` (resolve version, gather commits since last tag, render notes) →
+  `verify` (full gate) → `publish` (stamp `deno.json` + `CHANGELOG.md` +
+  `docs/releases/vX.Y.Z.md`, `npx jsr publish` via OIDC, push tag, create GitHub
+  Release with notes + manifest artifacts). Supports `dry_run` previews and
+  `v*.*.*` tag pushes. Full process: `docs/guides/RELEASING.md`.
 
 ## Documentation coverage
 
@@ -57,7 +61,7 @@ deno doc mod.ts  # rendered API preview
 Rules: every `export` (including class members) needs a directly attached
 `/** ... */` comment. The remaining `deno doc --lint` findings are
 `private-type-ref` (slow-types) notices, which are tracked separately from doc
-coverage.
+coverage — CI enforces only `missing-jsdoc` (see `.github/workflows/ci.yml`).
 
 ## Publishing
 

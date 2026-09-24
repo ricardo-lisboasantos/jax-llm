@@ -173,6 +173,14 @@ See [docs/architecture.md](docs/architecture.md) for the full guide.
 resolves model aliases on top of that. All fields are optional. See
 [docs/guides/CONFIGURATION.md](docs/guides/CONFIGURATION.md).
 
+Weights and tokenizers are cached on disk after the first download
+(`./.opfs/weights`, or the path in `JAX_LLM_CACHE`) — warm runs skip the network
+entirely, and the live benchmark drops from ~70s to ~15s. Sharded checkpoints
+(`model.safetensors.index.json`, e.g. `phi-2`, `maple-preview`) load
+shard-by-shard with peak memory near one shard; `maple-preview` (20B MoE, 256
+experts/layer) evaluates only the routed top-8 experts per token with RAM/disk
+expert paging, so it runs in ~2GB of VRAM instead of 40GB.
+
 ## Training
 
 Fine-tuning utilities in `engine/runtime/training.ts`:
@@ -222,7 +230,7 @@ Unit tests live next to their modules (`engine/*/*_test.ts`, e.g.
 `tokenizer_test.ts`, `sampler_test.ts`, `prompt_test.ts`, `registry_test.ts`,
 `runtime_test.ts`, `model_test.ts`, `database_test.ts`, `kv_test.ts`,
 `config_test.ts`); end-to-end tests live in `tests/integration_test.ts`.
-`deno task test:unit` currently passes 127 tests (0 failures).
+`deno task test:unit` currently passes 138 tests (0 failures).
 
 > Tests needing permissions (env, write, net) skip gracefully when denied, so
 > bare `deno test` stays green; `deno task test` and CI (`deno test -A`) execute
@@ -242,9 +250,14 @@ JSR requires ≥80% of exported symbols to have documentation; this package is a
 [docs/guides/DEVELOPMENT.md](docs/guides/DEVELOPMENT.md) for the publishing
 checklist.
 
-CI (`.github/workflows/ci.yml`) runs `fmt --check`, `lint`, `check --all`, and
-`test -A` on every push and PR, and publishes to JSR on pushes to `main` — see
-[docs/guides/DEVELOPMENT.md](docs/guides/DEVELOPMENT.md#cicd).
+CI (`.github/workflows/ci.yml`) verifies every push and PR (`fmt --check`,
+`lint`, `check --all`, `doc --lint`, `test -A`, JSR dry-run) and never publishes
+— see [docs/guides/DEVELOPMENT.md](docs/guides/DEVELOPMENT.md#cicd). Releases
+ship from the **Release button** (Actions → Release → Run workflow), which
+gathers commits since the last tag, generates the changelog, publishes to JSR,
+and cuts a GitHub Release — see
+[docs/guides/RELEASING.md](docs/guides/RELEASING.md) and
+[CHANGELOG.md](CHANGELOG.md).
 
 ## Performance & Releases
 
@@ -267,7 +280,15 @@ throughput**:
 - Prefill Throughput: 55.5 → 67.2 tok/s (+21.1%)
 - Encode Throughput: 1.28M → 1.36M tok/s (+6.0%)
 - Sequential Cache Reuse: +60% faster on warm cache
-- All 127 unit tests passing, zero regressions
+- All 138 unit tests passing, zero regressions
+
+### Unreleased (warm disk cache + pre-warm + MoE paging)
+
+`lfm2.5-350m` on WebGPU, warm cache (`deno task bench` in ~15s, was ~70s):
+
+- TTFT short: ~227–246 ms (-24–30% vs original 324.5 ms baseline)
+- Prefill short: ~71–79 tok/s; decode short: ~6.7–7.9 tok/s
+- Session decode: ~19–19.6 tok/s (p50 ~51 ms/tok)
 
 See [docs/releases/](docs/releases/) for full release notes and implementation
 details.
