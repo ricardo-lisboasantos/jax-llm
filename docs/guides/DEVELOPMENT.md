@@ -45,10 +45,14 @@ either, and manually via `workflow_dispatch`.
 - `release.yml` — the **Release button** (Actions → Release → Use workflow from
   `main` → Run workflow; refuses any other branch): `plan` (resolve version,
   gather commits since last tag, render notes) → `verify` (full gate on `main`)
-  → `publish` (stamp `deno.json` + `CHANGELOG.md` + `docs/releases/vX.Y.Z.md`,
-  `npx jsr publish` via OIDC, push tag, create GitHub Release with notes +
-  manifest artifacts). Supports `dry_run` previews and `v*.*.*` tag pushes. Full
-  process: `docs/guides/RELEASING.md`.
+  → `propose` (stamp `deno.json` + `CHANGELOG.md` + `docs/releases/vX.Y.Z.md`,
+  open a `release/vX.Y.Z` PR labeled `release`). Supports `dry_run` previews.
+  Full process: `docs/guides/RELEASING.md`.
+- `release-publish.yml` — runs when a `release`-labeled PR merges to `main`:
+  verifies the merged tree (including the `deno.json` version match), pushes the
+  `vX.Y.Z` tag, `npx jsr publish` via OIDC, creates the GitHub Release with
+  notes + manifest artifacts. Forks excluded; no direct pushes required, so
+  `main` stays fully branch-protected.
 
 ## Documentation coverage
 

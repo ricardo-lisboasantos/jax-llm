@@ -255,8 +255,8 @@ CI (`.github/workflows/ci.yml`) verifies every push and PR (`fmt --check`,
 — see [docs/guides/DEVELOPMENT.md](docs/guides/DEVELOPMENT.md#cicd). Releases
 ship from the **Release button** (Actions → Release → Use workflow from `main` →
 Run workflow), which gathers commits since the last tag, generates the
-changelog, publishes to JSR, and cuts a GitHub Release — see
-[docs/guides/RELEASING.md](docs/guides/RELEASING.md) and
+changelog, and opens a release PR — merging it publishes to JSR and cuts a
+GitHub Release — see [docs/guides/RELEASING.md](docs/guides/RELEASING.md) and
 [CHANGELOG.md](CHANGELOG.md).
 
 ## Performance & Releases

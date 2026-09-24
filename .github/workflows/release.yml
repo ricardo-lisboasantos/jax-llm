@@ -1,27 +1,28 @@
 name: Release
 
-# One-click release ("Release button"):
+# Release proposal ("Release button"):
 #   GitHub → Actions → Release → **Use workflow from: main** → Run workflow
-#   → pick a version bump. Releases run from main ONLY (production branch);
+#   → pick a version bump. Runs from main ONLY (production branch);
 #   development happens on dev and reaches main via pull request.
 #
 # What it does, in order (every step is visible in the run Summary):
 #   1. plan    — resolve previous tag + next version, gather commits since
 #                last release, render changelog, upload NOTES.md + manifest.
 #   2. verify  — full gate (fmt, lint, types, docs, tests, JSR dry-run).
-#   3. publish — bump deno.json, prepend CHANGELOG.md, write
-#                docs/releases/vX.Y.Z.md, publish to JSR (OIDC, no token),
-#                commit + tag + push, create the GitHub Release with artifacts.
+#   3. propose — bump deno.json, prepend CHANGELOG.md, write
+#                docs/releases/vX.Y.Z.md, and open a `release/vX.Y.Z` pull
+#                request to main (label: release). Nothing is published yet.
+#
+# Publishing happens in release-publish.yml when that PR merges: tag + JSR
+# publish (OIDC, no token) + GitHub Release. This keeps main fully
+# branch-protected — no direct pushes, not even from automation.
 #
 # Standardization:
 # - Version source of truth is `deno.json`. Tags are `vX.Y.Z` and always match.
 # - Changelog entries come from conventional commits via
 #   scripts/generate_changelog.ts (same script runs locally for previews).
-# - `dry_run: true` runs everything except the JSR publish, tag push, and
-#   GitHub Release — use it to review notes before shipping.
-#
-# Tag-driven releases are also supported: pushing a `v*.*.*` tag runs the same
-# pipeline with that exact version (no bump commit is pushed in that case).
+# - `dry_run: true` runs plan + verify + stamping and stops before opening
+#   the PR — use it to review notes before proposing.
 
 on:
   workflow_dispatch:
@@ -41,18 +42,15 @@ on:
         required: false
         default: ""
       dry_run:
-        description: "Preview only (no JSR publish, tag, or GitHub Release)"
+        description: "Preview only (no release PR opened)"
         required: false
         default: false
         type: boolean
       prerelease:
-        description: "Mark the GitHub Release as a pre-release"
+        description: "Mark the eventual GitHub Release as a pre-release"
         required: false
         default: false
         type: boolean
-  push:
-    tags:
-      - "v*.*.*"
 
 concurrency:
   group: release-${{ github.ref }}
@@ -61,6 +59,7 @@ concurrency:
 permissions:
   contents: write
   id-token: write
+  pull-requests: write
 
 jobs:
   plan:
@@ -75,9 +74,8 @@ jobs:
     steps:
       - name: Guard release source
         run: |
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then exit 0; fi
           if [[ "${{ github.ref }}" != "refs/heads/main" ]]; then
-            echo "::error::Releases must run from main (Use workflow from: main). Current: ${{ github.ref }}"
+            echo "::error::Release proposals must run from main (Use workflow from: main). Current: ${{ github.ref }}"
             exit 1
           fi
 
@@ -86,8 +84,8 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
           # Manual runs execute against main even if triggered from another
-          # branch selector; tag pushes check out the tag itself.
-          ref: ${{ github.ref_type == 'tag' && github.ref || 'main' }}
+          # branch selector.
+          ref: main
 
       - name: Setup Deno
         id: setup-deno
@@ -107,26 +105,23 @@ jobs:
         id: resolve
         run: |
           set -euo pipefail
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-            PREV_TAG="$(git tag --list 'v*' --sort=-v:refname | grep -v "^${GITHUB_REF_NAME}$" | head -n 1 || true)"
-            DRY_RUN="false"
-            PRERELEASE="false"
+          BUMP="${{ inputs.bump }}"
+          EXPLICIT="${{ inputs.version }}"
+          CURRENT="$(deno eval 'console.log(JSON.parse(await Deno.readTextFile("deno.json")).version)')"
+          if [[ "$BUMP" == "explicit" ]]; then
+            if [[ -z "$EXPLICIT" ]]; then echo "::error::bump=explicit requires the version input"; exit 1; fi
+            VERSION="${EXPLICIT#v}"
           else
-            BUMP="${{ inputs.bump }}"
-            EXPLICIT="${{ inputs.version }}"
-            CURRENT="$(deno eval 'console.log(JSON.parse(await Deno.readTextFile("deno.json")).version)')"
-            if [[ "$BUMP" == "explicit" ]]; then
-              if [[ -z "$EXPLICIT" ]]; then echo "::error::bump=explicit requires the version input"; exit 1; fi
-              VERSION="${EXPLICIT#v}"
-            else
-              VERSION="$(deno run -A scripts/generate_changelog.ts --bump "$BUMP" 2>/dev/null | head -1 | sed 's/^## v//; s/ —.*//')"
-              if [[ -z "$VERSION" ]]; then echo "::error::could not resolve bumped version"; exit 1; fi
-            fi
-            PREV_TAG="$(git tag --list 'v*' --sort=-v:refname | head -n 1 || true)"
-            DRY_RUN="${{ inputs.dry_run }}"
-            PRERELEASE="${{ inputs.prerelease }}"
+            VERSION="$(deno run -A scripts/generate_changelog.ts --bump "$BUMP" 2>/dev/null | head -1 | sed 's/^## v//; s/ —.*//')"
+            if [[ -z "$VERSION" ]]; then echo "::error::could not resolve bumped version"; exit 1; fi
           fi
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::resolved version is not semver X.Y.Z: $VERSION"
+            exit 1
+          fi
+          PREV_TAG="$(git tag --list 'v*' --sort=-v:refname | head -n 1 || true)"
+          DRY_RUN="${{ inputs.dry_run }}"
+          PRERELEASE="${{ inputs.prerelease }}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "previous_tag=$PREV_TAG" >> "$GITHUB_OUTPUT"
           echo "dry_run=$DRY_RUN" >> "$GITHUB_OUTPUT"
@@ -162,9 +157,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          # Verify exactly what would ship: main on manual runs, the tag itself
-          # on tag pushes.
-          ref: ${{ github.ref_type == 'tag' && github.ref || 'main' }}
+          # Verify exactly what would ship: main.
+          ref: main
 
       - name: Setup Deno
         id: setup-deno
@@ -206,21 +200,20 @@ jobs:
       - name: JSR dry-run
         run: npx jsr publish --dry-run
 
-  publish:
-    name: Publish v${{ needs.plan.outputs.version }}
+  propose:
+    name: Propose v${{ needs.plan.outputs.version }}
     needs: [plan, verify]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: write
-      id-token: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           fetch-tags: true
-          # On tag pushes, check out the tag; on manual runs, stay on main.
-          ref: ${{ github.ref_type == 'tag' && github.ref || 'main' }}
+          ref: main
 
       - name: Setup Deno
         id: setup-deno
@@ -270,41 +263,40 @@ jobs:
           fi
           npx jsr publish --dry-run
 
-      - name: Publish to JSR
+      - name: Open release PR
         if: needs.plan.outputs.dry_run != 'true'
-        run: npx jsr publish
-
-      - name: Commit, tag, push (manual runs only)
-        if: github.ref_type != 'tag' && needs.plan.outputs.dry_run != 'true'
         run: |
           set -euo pipefail
           VERSION="${{ needs.plan.outputs.version }}"
+          BRANCH="release/v$VERSION"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
           git add deno.json CHANGELOG.md "docs/releases/v$VERSION.md"
           git commit -m "chore(release): v$VERSION" || echo "nothing to commit"
-          git tag -a "v$VERSION" -m "Release v$VERSION" || echo "tag exists"
-          git push origin HEAD:main
-          git push origin "v$VERSION"
-
-      - name: Create GitHub Release
-        if: needs.plan.outputs.dry_run != 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ needs.plan.outputs.version }}
-          name: v${{ needs.plan.outputs.version }}
-          body_path: NOTES.md
-          prerelease: ${{ needs.plan.outputs.prerelease == 'true' }}
-          files: |
-            NOTES.md
-            release-manifest.json
-            CHANGELOG.md
+          git push --force origin "$BRANCH"
+          if gh pr view "$BRANCH" --json number >/dev/null 2>&1; then
+            gh pr edit "$BRANCH" --title "chore(release): v$VERSION" --body-file NOTES.md --add-label release
+            if [[ "${{ needs.plan.outputs.prerelease }}" == "true" ]]; then
+              gh pr edit "$BRANCH" --add-label pre-release
+            fi
+            echo "Updated existing PR for $BRANCH"
+          else
+            CREATE_ARGS=(--head "$BRANCH" --base main --title "chore(release): v$VERSION" --body-file NOTES.md --label release)
+            if [[ "${{ needs.plan.outputs.prerelease }}" == "true" ]]; then
+              CREATE_ARGS+=(--label pre-release)
+            fi
+            gh pr create "${CREATE_ARGS[@]}"
+            echo "Opened PR for $BRANCH"
+          fi
+          echo "### Proposal" >> "$GITHUB_STEP_SUMMARY"
+          echo "Review and merge https://github.com/${{ github.repository }}/compare/main...$BRANCH — merging publishes (see release-publish)." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Dry-run summary
         if: needs.plan.outputs.dry_run == 'true'
         run: |
-          echo "### Dry run — nothing published" >> "$GITHUB_STEP_SUMMARY"
-          echo "Review NOTES.md above, then re-run with dry_run=false to ship v${{ needs.plan.outputs.version }}." >> "$GITHUB_STEP_SUMMARY"
+          echo "### Dry run — no release PR opened" >> "$GITHUB_STEP_SUMMARY"
+          echo "Review NOTES.md above, then re-run with dry_run=false to propose v${{ needs.plan.outputs.version }}." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
@@ -319,7 +311,8 @@ jobs:
           retention-days: 90
 
       - name: Done
+        if: needs.plan.outputs.dry_run != 'true'
         run: |
           echo "### Result" >> "$GITHUB_STEP_SUMMARY"
-          echo "- JSR: https://jsr.io/@ricardo/jax-llm@${{ needs.plan.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Release: https://github.com/${{ github.repository }}/releases/tag/v${{ needs.plan.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Release PR must be merged to publish; CI runs the full gate on it." >> "$GITHUB_STEP_SUMMARY"
+          echo "- On merge, release-publish tags v${{ needs.plan.outputs.version }}, publishes to JSR, and creates the GitHub Release." >> "$GITHUB_STEP_SUMMARY"
